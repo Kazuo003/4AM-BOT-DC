@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  discordId     String         @unique
+  email         String?
+  name          String?
+  country       String?
+  createdAt     DateTime       @default(now())
+  orders        Order[]
+  tickets       Ticket[]
+  subscriptions Subscription[] // 👈 back relation
+}
+
+model Product {
+  id            String         @id @default(cuid())
+  type          String // 'VPS' | 'BOT' | 'WEB'
+  name          String
+  sku           String         @unique
+  specJson      String
+  priceCents    Int
+  currency      String
+  active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  orders        Order[]
+  subscriptions Subscription[] // 👈 back relation
+
+  @@index([type])
+}
+
+model Order {
+  id               String   @id @default(cuid())
+  orderNo          String   @unique
+  user             User     @relation(fields: [userId], references: [id])
+  userId           String
+  product          Product  @relation(fields: [productId], references: [id])
+  productId        String
+  planSnapshotJson String
+  amountCents      Int
+  currency         String
+  status           String   @default("PENDING") // 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
+  paymentProvider  String?
+  providerRef      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  ticket           Ticket?
+
+  subscription Subscription? @relation("LastOrder") // 👈 keep only this one!
+
+  @@index([status])
+}
+
+model Ticket {
+  id        String   @id @default(cuid())
+  guildId   String
+  channelId String   @unique
+  order     Order    @relation(fields: [orderId], references: [id])
+  orderId   String   @unique
+  user      User?    @relation(fields: [userId], references: [id]) // 👈 optional
+  userId    String? // 👈 optional
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
+}
+
+model Subscription {
+  id               String   @id @default(cuid())
+  userId           String
+  productId        String
+  lastOrderId      String?  @unique // 👈 make it unique
+  status           String   @default("ACTIVE")
+  currentPeriodEnd DateTime
+  remindedExpiry   Boolean  @default(false)
+
+  user      User    @relation(fields: [userId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+  lastOrder Order?  @relation("LastOrder", fields: [lastOrderId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, productId])
+}

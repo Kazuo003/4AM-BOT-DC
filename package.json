@@ -1,0 +1,28 @@
+{
+  "name": "discord-commerce-bot",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/bot.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "nodemon src/bot.js",
+    "start": "node src/bot.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev --name init",
+    "register": "node src/commands.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.18.0",
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "get-port": "^7.1.0",
+    "nanoid": "^5.0.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4",
+    "prisma": "^5.18.0"
+  }
+
+  
+}

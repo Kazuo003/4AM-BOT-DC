@@ -1,0 +1,3208 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>4AM STORE — Control Panel</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace']
+          },
+          colors: {
+            brand: {
+              50: '#EEF0FD',
+              100: '#D5D8FB',
+              400: '#727EF6',
+              500: '#5865F2',
+              600: '#4752C4',
+              700: '#3C45A5'
+            },
+            canvas: '#0A0B0E',
+            surface: {
+              DEFAULT: '#13151B',
+              subtle: '#0E1015',
+              elevated: '#1A1D25',
+              card: '#15171F'
+            },
+            border: {
+              subtle: 'rgba(255, 255, 255, 0.06)',
+              DEFAULT: 'rgba(255, 255, 255, 0.1)',
+              focus: 'rgba(88, 101, 242, 0.5)'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <style>
+    :root, html {
+      color-scheme: dark;
+    }
+    body {
+      background-color: #0A0B0E;
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      color: #E2E4E9;
+    }
+    
+    /* Sleek scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0A0B0E; }
+    ::-webkit-scrollbar-thumb { background: #232732; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #323846; }
+
+    /* Custom Glass & UI Surfaces */
+    .app-card {
+      background: #13151B;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 0.875rem;
+      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.45);
+    }
+    .app-card-nested {
+      background: #0D0F14;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 0.625rem;
+    }
+
+    /* Input & Form Styling */
+    .input-field {
+      background: #0B0D12;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      color: #F1F3F7;
+      border-radius: 0.5rem;
+      padding: 0.45rem 0.75rem;
+      font-size: 0.8125rem;
+      outline: none;
+      transition: all 0.15s ease-in-out;
+    }
+    .input-field:focus {
+      border-color: #5865F2;
+      box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.15);
+    }
+    .input-field::placeholder {
+      color: #646A7B;
+      font-size: 0.8125rem;
+    }
+
+    /* Dropdown Styling */
+    select {
+      color-scheme: dark !important;
+      background-color: #0B0D12;
+    }
+    select option, select optgroup {
+      background-color: #13151B !important;
+      color: #F1F3F7 !important;
+      padding: 6px 10px;
+    }
+    select option:checked {
+      background-color: #5865F2 !important;
+      color: #FFFFFF !important;
+    }
+
+    /* Tab Switch Animation */
+    .tab-btn {
+      position: relative;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .tab-btn.active {
+      background: linear-gradient(135deg, rgba(88, 101, 242, 0.18) 0%, rgba(71, 82, 196, 0.08) 100%);
+      color: #FFFFFF;
+      border: 1px solid rgba(88, 101, 242, 0.35);
+    }
+    .tab-btn.active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 20%;
+      bottom: 20%;
+      width: 3.5px;
+      border-radius: 0 4px 4px 0;
+      background: #5865F2;
+      box-shadow: 0 0 10px #5865F2;
+    }
+
+    /* Subtle hover transitions */
+    .hover-lift {
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .hover-lift:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255, 255, 255, 0.14);
+      box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.5);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-brand-500/30 selection:text-brand-100">
+
+  <!-- ==================== LOGIN MODAL ==================== -->
+  <div id="loginModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center hidden p-4">
+    <div class="app-card p-7 w-full max-w-sm shadow-2xl border border-white/10 space-y-5">
+      <div class="flex items-center gap-3.5 pb-2">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-500 flex items-center justify-center text-white text-lg font-black shadow-lg shadow-brand-500/30">
+          4AM
+        </div>
+        <div>
+          <h2 class="text-base font-extrabold text-white tracking-tight">Đăng Nhập Quản Trị</h2>
+          <p class="text-xs text-gray-400">Control Panel — 4AM STORE</p>
+        </div>
+      </div>
+      <div class="space-y-3.5">
+        <div>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Mật khẩu Admin</label>
+          <input type="password" id="loginPassword" class="input-field w-full py-2" placeholder="Nhập mật khẩu (4amstore123)" onkeydown="if(event.key==='Enter') submitLogin()">
+        </div>
+        <p id="loginError" class="text-xs text-rose-400 hidden"></p>
+        <button onclick="submitLogin()" class="w-full py-2.5 px-4 bg-brand-500 hover:bg-brand-600 active:scale-[0.98] text-white font-semibold rounded-lg shadow-lg shadow-brand-500/25 transition flex items-center justify-center gap-2 text-sm">
+          <i class="fa-solid fa-lock-open text-xs"></i> Đăng Nhập
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== ADD SELLER MODAL ==================== -->
+  <div id="addSellerModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center hidden p-4">
+    <div class="app-card p-6 w-full max-w-lg shadow-2xl border border-white/10 space-y-4">
+      <div class="flex items-center justify-between border-b border-white/[0.07] pb-3.5">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-brand-500/15 text-brand-400 flex items-center justify-center text-lg border border-brand-500/25">
+            <i class="fa-brands fa-discord"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Thêm Người Bán Qua Discord ID</h3>
+            <p class="text-[11px] text-gray-400">Tự động đồng bộ Avatar & Tên tài khoản từ Discord</p>
+          </div>
+        </div>
+        <button onclick="closeAddSellerModal()" class="text-gray-400 hover:text-white p-1 rounded transition">
+          <i class="fa-solid fa-xmark text-sm"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3.5">
+        <div>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+            Discord User ID <span class="text-rose-400">*</span>
+          </label>
+          <div class="flex gap-2">
+            <input type="text" id="modalSellerDiscordId" class="input-field flex-1 font-mono text-xs" placeholder="VD: 895890393806274570" onkeydown="if(event.key==='Enter') checkDiscordUser()">
+            <button onclick="checkDiscordUser()" id="btnCheckId" class="px-3.5 py-1.5 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition flex items-center gap-1.5 shadow">
+              <i class="fa-solid fa-magnifying-glass"></i> Kiểm Tra
+            </button>
+          </div>
+          <p class="text-[10px] text-gray-500 mt-1">💡 Bật <em>Chế độ nhà phát triển</em> trong Discord &gt; Chuột phải tài khoản &gt; <em>Sao chép ID người dùng</em>.</p>
+        </div>
+
+        <!-- Discord User Preview -->
+        <div id="modalDiscordPreview" class="hidden app-card-nested p-3 border border-brand-500/30 flex items-center gap-3">
+          <img id="previewAvatar" src="" class="w-11 h-11 rounded-full border-2 border-brand-500 object-cover shadow bg-black/40">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span id="previewUsername" class="font-bold text-white text-xs truncate"></span>
+              <span class="text-[9px] px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-400 font-mono font-medium">Đã tìm thấy</span>
+            </div>
+            <p id="previewGlobalName" class="text-[11px] text-gray-400 truncate"></p>
+            <p id="previewId" class="text-[10px] font-mono text-gray-500"></p>
+          </div>
+        </div>
+
+        <!-- Initial Bank Account Info -->
+        <div class="border-t border-white/[0.07] pt-3 space-y-2.5">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400">Tài khoản thanh toán mặc định:</span>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <label class="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Ngân hàng / Ví</label>
+              <input type="text" id="modalBankName" class="input-field w-full py-1 text-xs" value="MB Bank" placeholder="MB Bank, MoMo...">
+            </div>
+            <div>
+              <label class="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Số tài khoản / SĐT</label>
+              <input type="text" id="modalBankAccount" class="input-field w-full py-1 text-xs font-mono font-bold text-emerald-400" placeholder="0123456789">
+            </div>
+            <div>
+              <label class="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Chủ tài khoản</label>
+              <input type="text" id="modalBankOwner" class="input-field w-full py-1 text-xs font-semibold" placeholder="NGUYEN VAN A">
+            </div>
+            <div>
+              <label class="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Link Ảnh QR (tuỳ chọn)</label>
+              <input type="text" id="modalBankQr" class="input-field w-full py-1 text-xs" placeholder="https://...">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 border-t border-white/[0.07] pt-3">
+        <button onclick="closeAddSellerModal()" class="px-3.5 py-1.5 bg-[#1C1F27] hover:bg-[#252A36] text-gray-300 rounded-lg text-xs font-medium transition">
+          Hủy Bỏ
+        </button>
+        <button onclick="confirmAddSeller()" id="btnConfirmAdd" disabled class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow">
+          <i class="fa-solid fa-check"></i> Xác Nhận Thêm Seller
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== TOP NAVIGATION BAR ==================== -->
+  <header class="border-b border-white/[0.07] bg-surface-subtle/95 backdrop-blur-md sticky top-0 z-30 px-5 md:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3.5">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center text-white font-black text-sm shadow-md shadow-brand-500/25 border border-white/10">
+        4AM
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span id="headerStoreName" class="text-sm font-extrabold text-white tracking-tight">4AM STORE</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-400 border border-brand-500/30 font-mono font-semibold">CONTROL PANEL</span>
+        </div>
+        <p class="text-[11px] text-gray-400 flex items-center gap-1.5 mt-0.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span id="botStatusText">Bot đang chạy...</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Header Actions -->
+    <div class="flex items-center gap-2.5">
+      <button onclick="saveConfig()" id="btnSave" class="px-3.5 py-1.5 rounded-lg bg-[#181B23] hover:bg-[#222633] text-gray-200 hover:text-white border border-white/[0.08] text-xs font-semibold flex items-center gap-1.5 transition active:scale-[0.98] shadow-sm">
+        <i class="fa-solid fa-floppy-disk text-emerald-400"></i> <span>Lưu Dữ Liệu</span>
+      </button>
+
+      <button onclick="saveAndSync()" id="btnSync" class="px-4 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-brand-500/25 transition active:scale-[0.98]">
+        <i class="fa-solid fa-arrows-rotate"></i> <span>Lưu & Đồng Bộ Discord</span>
+      </button>
+
+      <button onclick="logout()" title="Đăng xuất" class="w-8 h-8 rounded-lg bg-[#181B23] hover:bg-rose-500/20 hover:text-rose-400 text-gray-400 flex items-center justify-center transition border border-white/[0.06]">
+        <i class="fa-solid fa-arrow-right-from-bracket text-xs"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== MAIN WORKSPACE ==================== -->
+  <div class="flex-1 flex flex-col md:flex-row max-w-[1600px] w-full mx-auto p-4 md:p-6 gap-6">
+    
+    <!-- Sidebar Tabs -->
+    <aside class="w-full md:w-48 lg:w-56 shrink-0 flex md:flex-col gap-1.5 overflow-x-auto pb-2 md:pb-0">
+      
+      <button onclick="switchTab('tabSellers')" id="btnTabSellers" class="tab-btn active flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-white transition w-full text-left">
+        <div class="w-7 h-7 rounded-lg bg-brand-500/20 text-brand-400 flex items-center justify-center text-xs shrink-0">
+          <i class="fa-solid fa-users-gear"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="font-bold truncate">Quản Lý Người Bán</div>
+          <div class="text-[10px] text-gray-400 truncate">STK & Phân chia ticket</div>
+        </div>
+      </button>
+
+      <button onclick="switchTab('tabProducts')" id="btnTabProducts" class="tab-btn flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-gray-400 hover:text-white hover:bg-white/[0.03] transition w-full text-left">
+        <div class="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xs shrink-0">
+          <i class="fa-solid fa-boxes-stacked"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="font-bold truncate">Mặt Hàng & Bảng Giá</div>
+          <div class="text-[10px] text-gray-400 truncate">Các gói hàng & gán seller</div>
+        </div>
+      </button>
+
+      <button onclick="switchTab('tabSettings')" id="btnTabSettings" class="tab-btn flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-gray-400 hover:text-white hover:bg-white/[0.03] transition w-full text-left">
+        <div class="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xs shrink-0">
+          <i class="fa-solid fa-palette"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="font-bold truncate">Tùy Chỉnh Menu & Ngôn Ngữ</div>
+          <div class="text-[10px] text-gray-400 truncate">Embed, màu sắc & song ngữ</div>
+        </div>
+      </button>
+
+      <button onclick="switchTab('tabTickets')" id="btnTabTickets" class="tab-btn flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-gray-400 hover:text-white hover:bg-white/[0.03] transition w-full text-left">
+        <div class="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-xs shrink-0">
+          <i class="fa-solid fa-ticket"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="font-bold truncate">Cấu Hình Ticket & Kênh</div>
+          <div class="text-[10px] text-gray-400 truncate">Kênh hỗ trợ & Embed panel</div>
+        </div>
+      </button>
+
+      <!-- Store Quick Stats -->
+      <div class="mt-auto hidden md:block pt-5 border-t border-white/[0.06] text-[11px] text-gray-400 space-y-2">
+        <div class="flex items-center justify-between px-1">
+          <span class="flex items-center gap-1.5"><i class="fa-solid fa-user-tag text-brand-400 text-[10px]"></i> Sellers:</span>
+          <span id="statSellersCount" class="font-bold text-white font-mono bg-white/[0.05] px-2 py-0.5 rounded">0</span>
+        </div>
+        <div class="flex items-center justify-between px-1">
+          <span class="flex items-center gap-1.5"><i class="fa-solid fa-layer-group text-emerald-400 text-[10px]"></i> Mặt Hàng:</span>
+          <span id="statProductsCount" class="font-bold text-white font-mono bg-white/[0.05] px-2 py-0.5 rounded">0</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Tab Content Area -->
+    <main class="flex-1 min-w-0">
+      
+      <!-- ==================== TAB 1: QUẢN LÝ NGƯỜI BÁN (SELLERS) ==================== -->
+      <section id="tabSellers" class="space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] pb-4">
+          <div>
+            <h2 class="text-base font-extrabold text-white flex items-center gap-2">
+              <i class="fa-solid fa-user-tag text-brand-400"></i> Danh Sách Người Bán & Tài Khoản Ngân Hàng
+            </h2>
+            <p class="text-xs text-gray-400 mt-0.5">Khi khách mở ticket cho mặt hàng nào, bot sẽ cấp quyền và <strong>tag trực tiếp Seller tương ứng</strong>.</p>
+          </div>
+          <button onclick="openAddSellerModal()" class="px-3.5 py-2 bg-brand-500 hover:bg-brand-600 active:scale-[0.98] text-white rounded-lg text-xs font-bold flex items-center gap-2 transition shadow-md shadow-brand-500/20">
+            <i class="fa-brands fa-discord"></i> Thêm Người Bán Qua Discord ID
+          </button>
+        </div>
+
+        <div id="sellersContainer" class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <!-- Dynamic Seller Cards rendered here -->
+        </div>
+      </section>
+
+      <!-- ==================== TAB 2: MẶT HÀNG & BẢNG GIÁ ==================== -->
+      <section id="tabProducts" class="space-y-5 hidden">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] pb-4">
+          <div>
+            <h2 class="text-base font-extrabold text-white flex items-center gap-2">
+              <i class="fa-solid fa-cart-shopping text-emerald-400"></i> Quản Lý Mặt Hàng & Gán Người Bán
+            </h2>
+            <p class="text-xs text-gray-400 mt-0.5">Chỉnh sửa danh mục hiển thị trên Menu Discord. Mỗi mặt hàng có thể gán cho Seller riêng hoặc dùng STK chung.</p>
+          </div>
+          <button onclick="openAddProductModal()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white rounded-lg text-xs font-bold flex items-center gap-2 transition shadow-md shadow-emerald-600/20">
+            <i class="fa-solid fa-plus"></i> Thêm Mặt Hàng Mới
+          </button>
+        </div>
+
+        <!-- 2-COLUMN LAYOUT: Product Cards on Left, Dedicated Sticky Live Preview on Right -->
+        <div class="flex flex-col md:flex-row gap-5 items-start">
+          
+          <!-- LEFT COLUMN: Product Cards (Dropdown Accordion Style) -->
+          <div class="flex-1 min-w-0 space-y-3">
+            <div class="flex items-center justify-between gap-2 px-1">
+              <span class="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                <i class="fa-solid fa-layer-group text-emerald-400"></i> Danh Sách Mặt Hàng (<span id="prodCardCountHeader">7</span>)
+              </span>
+              <div class="flex items-center gap-1.5">
+                <button type="button" onclick="expandAllCards(true)" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-gray-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition flex items-center gap-1.5 active:scale-95 cursor-pointer" title="Mở rộng tất cả các card mặt hàng">
+                  <i class="fa-solid fa-angles-down text-[10px] text-emerald-400"></i> Mở tất cả
+                </button>
+                <button type="button" onclick="expandAllCards(false)" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-gray-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition flex items-center gap-1.5 active:scale-95 cursor-pointer" title="Thu gọn tất cả thành danh sách gọn gàng">
+                  <i class="fa-solid fa-angles-up text-[10px] text-gray-400"></i> Thu gọn tất cả
+                </button>
+              </div>
+            </div>
+
+            <div class="space-y-2.5" id="productsContainer">
+              <!-- Dynamic Category Cards rendered here -->
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN: Dedicated Sticky Discord Live Preview -->
+          <div class="w-full md:w-[330px] lg:w-[370px] xl:w-[410px] shrink-0 sticky top-20 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                <i class="fa-brands fa-discord text-brand-500"></i> Xem Trước Discord (Khách thấy)
+              </span>
+              <div class="flex items-center gap-1 app-card-nested p-1 rounded-lg border border-white/[0.06]">
+                <button type="button" onclick="setProductPreviewGlobalLang('vi')" id="btnProdPrevLangVi" class="px-2.5 py-0.5 rounded text-[11px] font-bold transition bg-brand-500 text-white">🇻🇳 VI</button>
+                <button type="button" onclick="setProductPreviewGlobalLang('en')" id="btnProdPrevLangEn" class="px-2.5 py-0.5 rounded text-[11px] font-bold transition bg-transparent text-gray-400 hover:text-white">🇬🇧 EN</button>
+              </div>
+            </div>
+
+            <!-- Product Switcher Dropdown & Seller Info Strip -->
+            <div class="app-card p-3 flex items-center justify-between gap-2 border border-white/[0.06]">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-[11px] font-bold text-gray-400 shrink-0 uppercase tracking-wider">Mặt hàng:</span>
+                <select id="prodPreviewSelect" onchange="selectProductForPreview(this.value)" class="input-field py-1 text-xs font-bold text-brand-300 bg-[#0F1116] max-w-[200px] truncate">
+                  <!-- Options populated dynamically -->
+                </select>
+              </div>
+              <div id="previewSellerBadge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 truncate">
+                <!-- Seller info -->
+              </div>
+            </div>
+
+            <!-- Discord Mock Client Container -->
+            <div class="bg-[#313338] p-4 rounded-xl border border-white/[0.08] shadow-2xl font-sans text-xs text-gray-200 space-y-2.5">
+              <!-- Bot Header -->
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-white font-bold text-xs shadow shrink-0">4AM</div>
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <span class="font-bold text-white text-xs" id="prodBotName">4AM SHOP</span>
+                  <span class="bg-brand-500 text-white text-[8px] px-1 py-0.5 rounded font-semibold leading-none">APP</span>
+                  <span class="text-[10px] text-gray-400">Hôm nay lúc 12:00</span>
+                </div>
+              </div>
+
+              <!-- Ephemeral notice -->
+              <div class="flex items-center gap-1.5 text-[10px] text-gray-400 pl-10 -mt-1">
+                <i class="fa-solid fa-eye text-[9px]"></i>
+                <span>Chỉ bạn mới có thể thấy tin nhắn này (Ephemeral)</span>
+              </div>
+
+              <!-- Embed Preview -->
+              <div id="prodEmbedBox" class="ml-10 border-l-[3.5px] bg-[#2B2D31] rounded-r-lg p-3.5 space-y-2 relative overflow-hidden" style="border-color: #5865F2;">
+                <h4 id="prodEmbedTitle" class="text-white font-bold text-sm leading-snug">Bảng Giá</h4>
+                
+                <div class="space-y-1.5 text-xs leading-relaxed">
+                  <p id="prodEmbedSub" class="font-bold text-white">📦 <strong>CHÍNH HÃNG:</strong></p>
+                  <p id="prodEmbedHandlerRow" class="text-[11px] text-brand-300 font-medium flex items-center gap-1.5">
+                    <i class="fa-solid fa-user-tag text-[10px] text-brand-400 shrink-0"></i>
+                    <span><strong id="prodEmbedHandlerPrefix" class="text-gray-300">Người phụ trách:</strong> <span id="prodEmbedHandlerNames" class="font-bold text-brand-300">@4am.kz</span></span>
+                  </p>
+                  <div id="prodEmbedItems" class="text-gray-300 font-mono space-y-1 pt-0.5 text-[11px]">
+                    <!-- items list -->
+                  </div>
+                </div>
+
+                <!-- Banner Image -->
+                <img id="prodEmbedBanner" src="" referrerpolicy="no-referrer" class="w-full rounded-md max-h-48 object-cover border border-white/10 mt-2 hidden" onerror="this.classList.add('hidden')">
+              </div>
+
+              <!-- Action Button -->
+              <div class="ml-10 pt-1">
+                <div class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-brand-500 text-white text-xs font-semibold shadow-sm">
+                  <span id="prodEmbedBtn">🎟️ Mở Ticket mua hàng</span>
+                </div>
+              </div>
+
+              <!-- Ticket Handlers Ping Notice -->
+              <div class="ml-10 pt-1 text-[11px] text-gray-300 flex items-center gap-1.5 flex-wrap">
+                <i class="fa-solid fa-bell text-brand-400 text-xs"></i>
+                <span class="text-gray-400">Ping khi mở ticket:</span>
+                <span id="prodEmbedPingList" class="font-semibold text-brand-300">Staff</span>
+              </div>
+
+              <!-- Live Indicator Note -->
+              <div class="ml-10 pt-1.5 text-[10px] text-gray-400 flex items-center justify-between border-t border-white/[0.05]">
+                <span class="flex items-center gap-1.5">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block"></span>
+                  <span class="text-gray-400">Cập nhật trực tiếp khi nhập</span>
+                </span>
+                <span id="prodCardCountBadge" class="text-[9px] font-mono text-gray-500"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 3: TÙY CHỈNH MENU & NGÔN NGỮ ==================== -->
+      <section id="tabSettings" class="space-y-5 hidden">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] pb-4">
+          <div>
+            <h2 class="text-base font-extrabold text-white flex items-center gap-2">
+              <i class="fa-solid fa-palette text-indigo-400"></i> Tùy Chỉnh Menu Embed & Chế Độ Song Ngữ
+            </h2>
+            <p class="text-xs text-gray-400 mt-0.5">Tùy biến câu chữ, màu sắc, ảnh banner và hỗ trợ song ngữ (Tiếng Việt & English) cho Menu Discord.</p>
+          </div>
+          <div class="flex items-center gap-2 app-card-nested p-1.5 rounded-xl border border-white/[0.06]">
+            <span class="text-[11px] font-semibold text-gray-400 pl-2">Ngôn ngữ mặc định của bot:</span>
+            <button type="button" onclick="setDefaultLang('vi')" id="btnDefLangVi" class="px-2.5 py-1 rounded-lg text-xs font-bold transition">🇻🇳 Tiếng Việt</button>
+            <button type="button" onclick="setDefaultLang('en')" id="btnDefLangEn" class="px-2.5 py-1 rounded-lg text-xs font-bold transition">🇬🇧 English</button>
+          </div>
+        </div>
+
+        <!-- Language Switcher for Editing -->
+        <div class="flex items-center gap-2 pb-1">
+          <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mr-2">Đang soạn thảo:</span>
+          <button type="button" onclick="switchEditLang('vi')" id="tabEditVi" class="px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition bg-brand-500 text-white shadow-sm">
+            <span>🇻🇳 Soạn Tiếng Việt</span>
+          </button>
+          <button type="button" onclick="switchEditLang('en')" id="tabEditEn" class="px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition bg-[#15171F] text-gray-400 hover:text-white border border-white/[0.06]">
+            <span>🇬🇧 Soạn English</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <!-- Form Inputs (Left) -->
+          <div class="app-card p-5 space-y-4">
+            <div class="flex items-center justify-between border-b border-white/[0.07] pb-2.5">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-pen-to-square text-brand-400"></i> Nội Dung Từng Thành Phần (<span id="editLangLabel" class="text-brand-400 font-bold">Tiếng Việt</span>)
+              </span>
+              <span class="text-[11px] text-gray-500 font-mono">Dùng {storeName}, {ticket}</span>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Tiêu Đề Menu (Embed Title)</label>
+              <input type="text" id="inputMenuTitle" oninput="onMenuFormChange()" class="input-field w-full font-bold text-xs" placeholder="BẢNG GIÁ CÁC MẶT HÀNG TẠI {storeName}">
+            </div>
+
+            <!-- Dynamic Instruction Lines -->
+            <div class="space-y-2 pt-1">
+              <div class="flex items-center justify-between">
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                  Các Dòng Hướng Dẫn / Mô Tả (<span id="linesCountBadge" class="text-brand-400 font-bold">2 dòng</span>)
+                </label>
+                <button type="button" onclick="addMenuInstructionLine()" class="px-2.5 py-0.5 bg-brand-500/15 hover:bg-brand-500/25 text-brand-400 rounded text-[11px] font-bold transition flex items-center gap-1 border border-brand-500/20">
+                  <i class="fa-solid fa-plus text-[10px]"></i> Thêm Dòng
+                </button>
+              </div>
+
+              <div id="menuLinesContainer" class="space-y-2">
+                <!-- Lines injected dynamically by JS -->
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Tiêu Đề Khối Thanh Toán</label>
+                <input type="text" id="inputMenuPaymentTitle" oninput="onMenuFormChange()" class="input-field w-full text-xs font-semibold" placeholder="╰─ PHƯƠNG THỨC THANH TOÁN">
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Phương Thức Thanh Toán</label>
+                <input type="text" id="inputMenuPaymentMethods" oninput="onMenuFormChange()" class="input-field w-full text-xs font-mono text-amber-300" placeholder="Bank, Card, MoMo, Tsr, LTC">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Ghi Chú Chân Trang (Footer)</label>
+                <input type="text" id="inputMenuFooterNote" oninput="onMenuFormChange()" class="input-field w-full text-xs italic text-gray-400" placeholder="Bảng giá không cố định, có thể thay đổi theo thời gian">
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Chữ Gợi Ý Menu (Placeholder)</label>
+                <input type="text" id="inputMenuPlaceholder" oninput="onMenuFormChange()" class="input-field w-full text-xs" placeholder="Đưa ra lựa chọn">
+              </div>
+            </div>
+
+            <!-- Global Design & Branding Settings -->
+            <div class="pt-4 border-t border-white/[0.07] space-y-3.5">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-image text-brand-400"></i> Hình Ảnh & Màu Sắc (Chung Cả 2 Ngôn Ngữ)
+              </span>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Màu Thanh Viền Embed</label>
+                  <div class="flex items-center gap-2">
+                    <input type="color" id="inputMenuColor" oninput="onColorPickerChange(this.value)" class="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0 p-0">
+                    <input type="text" id="inputMenuColorHex" oninput="onColorHexChange(this.value)" class="input-field flex-1 text-xs font-mono uppercase" placeholder="#2B2D31">
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Tên Cửa Hàng (Store Name)</label>
+                  <input type="text" id="inputStoreName" oninput="onStoreNameChange(this.value)" class="input-field w-full text-xs font-bold" placeholder="4AM STORE">
+                </div>
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between mb-1.5">
+                  <label class="text-[11px] font-bold uppercase tracking-wider text-gray-400">Link Ảnh Banner Lớn (Menu Banner)</label>
+                  <button type="button" onclick="clearMenuBanner()" class="text-[10px] text-rose-400 hover:underline">Xóa banner (ẩn ảnh)</button>
+                </div>
+                <input type="text" id="inputMainBannerUrl" oninput="onMenuFormChange()" class="input-field w-full text-xs" placeholder="https://... (Để trống nếu không muốn dùng ảnh)">
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Link Logo Cửa Hàng (Thumbnail góc)</label>
+                  <input type="text" id="inputLogoUrl" oninput="onMenuFormChange()" class="input-field w-full text-xs" placeholder="https://...">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">ID Kênh Ticket Hỗ Trợ</label>
+                  <input type="text" id="inputTicketChannelId" oninput="onMenuFormChange()" class="input-field w-full text-xs font-mono" placeholder="1379348256743489546">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Preview Side by Side (Right) -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                <i class="fa-brands fa-discord text-brand-500"></i> Xem Trước Trực Tiếp (Live Discord Preview)
+              </span>
+              <div class="flex items-center gap-1 app-card-nested p-1 rounded-lg border border-white/[0.06]">
+                <button type="button" onclick="togglePreviewLang('vi')" id="btnPrevLangVi" class="px-2.5 py-0.5 rounded text-[11px] font-bold transition bg-brand-500 text-white">🇻🇳 VI</button>
+                <button type="button" onclick="togglePreviewLang('en')" id="btnPrevLangEn" class="px-2.5 py-0.5 rounded text-[11px] font-bold transition bg-transparent text-gray-400 hover:text-white">🇬🇧 EN</button>
+              </div>
+            </div>
+
+            <!-- Discord Mock Client Container -->
+            <div class="bg-[#313338] p-4 rounded-xl border border-white/[0.08] shadow-2xl font-sans text-sm sticky top-20">
+              <div class="flex items-center gap-3 mb-2.5">
+                <div class="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-white font-bold text-xs shadow shrink-0">4AM</div>
+                <div class="flex items-center gap-1.5">
+                  <span class="font-bold text-white text-xs">4AM SHOP</span>
+                  <span class="bg-brand-500 text-white text-[9px] px-1 py-0.5 rounded font-semibold leading-none">APP</span>
+                  <span class="text-[10px] text-gray-400">Hôm nay lúc 12:00</span>
+                </div>
+              </div>
+
+              <!-- Embed Preview -->
+              <div id="prevEmbedBox" class="ml-10 border-l-4 bg-[#2B2D31] rounded-r-lg p-3.5 space-y-2.5 relative overflow-hidden" style="border-color: #2B2D31;">
+                <img id="prevLogo" src="" class="w-12 h-12 rounded-full absolute top-3.5 right-3.5 object-cover border border-white/10 hidden">
+                <h3 id="prevTitle" class="text-white font-bold text-sm pr-14 leading-snug">BẢNG GIÁ CÁC MẶT HÀNG TẠI 4AM STORE</h3>
+                
+                <div class="text-xs text-gray-300 space-y-1">
+                  <div id="prevLinesContainer" class="space-y-1">
+                    <p>• Xem Giá Sản Phẩm Bên Dưới Nhé !</p>
+                    <p>• Khi chọn được mặt hàng ưng ý, bạn có thể tạo Ticket để mua hàng tại <span class="text-brand-400 font-semibold bg-brand-500/10 px-1 rounded">#『🎟』ticket</span></p>
+                  </div>
+                  <p id="prevPaymentTitle" class="font-semibold text-white pt-1 text-xs">╰─ PHƯƠNG THỨC THANH TOÁN</p>
+                  <div id="prevPayment" class="bg-[#1E1F22] p-2 rounded text-gray-300 font-mono text-[11px] border border-black/20">Bank, Card, MoMo, Tsr, LTC</div>
+                  <p id="prevFooterNote" class="text-gray-400 italic pt-1 text-[11px] font-medium">Bảng giá không cố định, có thể thay đổi theo thời gian</p>
+                </div>
+
+                <img id="prevBanner" src="" class="w-full rounded-md max-h-44 object-cover border border-white/10 hidden mt-2">
+              </div>
+
+              <!-- Select Menu Preview -->
+              <div class="ml-10 mt-2.5">
+                <div class="w-full bg-[#1E1F22] border border-[#2B2D31] rounded-lg px-3 py-2 flex items-center justify-between text-gray-300">
+                  <span id="prevPlaceholder" class="text-xs">Đưa ra lựa chọn</span>
+                  <i class="fa-solid fa-chevron-down text-xs text-gray-400"></i>
+                </div>
+              </div>
+
+              <!-- Language Switch Buttons Preview -->
+              <div class="ml-10 mt-2.5 flex items-center gap-2">
+                <button type="button" id="prevBtnVi" onclick="togglePreviewLang('vi')" class="px-3 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition bg-brand-500 text-white">
+                  <span>🇻🇳 Tiếng Việt</span>
+                </button>
+                <button type="button" id="prevBtnEn" onclick="togglePreviewLang('en')" class="px-3 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition bg-[#4E5058] text-white hover:bg-[#6D6F78]">
+                  <span>🇬🇧 English</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 4: CẤU HÌNH TICKET & KÊNH HỖ TRỢ ==================== -->
+      <section id="tabTickets" class="space-y-5 hidden">
+        <!-- Top bar -->
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] pb-4">
+          <div>
+            <h2 class="text-base font-extrabold text-white flex items-center gap-2">
+              <i class="fa-solid fa-ticket text-amber-400"></i> Cấu Hình Ticket Panel & Kênh Hỗ Trợ
+            </h2>
+            <p class="text-xs text-gray-400 mt-0.5">Tùy biến tên kênh Discord, nội dung bảng mở Ticket, định dạng kênh con và Live Discord Preview.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="syncTicketPanelToDiscord()" id="btnSyncTicketPanel" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition bg-amber-500 hover:bg-amber-600 active:scale-95 text-white flex items-center gap-2 shadow-lg shadow-amber-500/20">
+              <i class="fa-solid fa-rotate"></i>
+              <span>Đồng Bộ Ticket Lên Discord</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 1. Cấu hình Kênh Discord (Channels & Naming) -->
+        <div class="app-card p-4 space-y-3">
+          <div class="flex items-center justify-between border-b border-white/[0.07] pb-2">
+            <span class="text-xs font-extrabold uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
+              <i class="fa-solid fa-hashtag text-brand-400"></i> Thiết Lập Tên Kênh Discord & Tiền Tố Ticket Con
+            </span>
+            <span class="text-[11px] text-amber-400/90 bg-amber-500/10 px-2 py-0.5 rounded font-mono font-semibold">Tự động rename trên Discord khi lưu</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div>
+              <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">
+                Tên Kênh Tiếng Việt (VI)
+              </label>
+              <div class="relative">
+                <span class="absolute left-3 top-2.5 text-xs text-gray-500 font-mono">#</span>
+                <input type="text" id="inputTicketChanVi" oninput="onTicketFormChange()" class="input-field w-full pl-7 text-xs font-bold text-white" placeholder="『🎟』ticket-support">
+              </div>
+              <p class="text-[10px] text-gray-500 mt-1">VD: 『🎟』ticket-support hoặc support</p>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">
+                Tên Kênh Tiếng Anh (EN)
+              </label>
+              <div class="relative">
+                <span class="absolute left-3 top-2.5 text-xs text-gray-500 font-mono">#</span>
+                <input type="text" id="inputTicketChanEn" oninput="onTicketFormChange()" class="input-field w-full pl-7 text-xs font-bold text-white" placeholder="『🎟』ticket-support-en">
+              </div>
+              <p class="text-[10px] text-gray-500 mt-1">VD: 『🎟』ticket-support-en</p>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">
+                Tiền Tố Kênh Khi Khách Mở Ticket
+              </label>
+              <input type="text" id="inputTicketPrefix" oninput="onTicketFormChange()" class="input-field w-full text-xs font-mono text-emerald-400 font-bold" placeholder="ticket-support">
+              <p class="text-[10px] text-gray-500 mt-1">VD: ticket-support ➔ ticket-support-username-123</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Language Switcher for Ticket Editing -->
+        <div class="flex items-center gap-2 pb-1">
+          <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mr-2">Đang soạn thảo Ticket:</span>
+          <button type="button" onclick="switchTicketEditLang('vi')" id="tabTicketEditVi" class="px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition bg-amber-500 text-white shadow-sm">
+            <span>🇻🇳 Soạn Tiếng Việt</span>
+          </button>
+          <button type="button" onclick="switchTicketEditLang('en')" id="tabTicketEditEn" class="px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition bg-[#15171F] text-gray-400 hover:text-white border border-white/[0.06]">
+            <span>🇬🇧 Soạn English</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <!-- Form Inputs (Left) -->
+          <div class="space-y-4">
+            <!-- Embed Content Card -->
+            <div class="app-card p-5 space-y-4">
+              <div class="flex items-center justify-between border-b border-white/[0.07] pb-2.5">
+                <span class="text-xs font-extrabold uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
+                  <i class="fa-solid fa-envelope-open-text text-amber-400"></i> Nội Dung Bảng Mở Ticket (<span id="ticketEditLangLabel" class="text-amber-400 font-bold">Tiếng Việt</span>)
+                </span>
+                <span class="text-[11px] text-gray-500 font-mono">Dùng {storeName}</span>
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Tiêu Đề Embed (Title)</label>
+                <input type="text" id="inputTicketTitle" oninput="onTicketFormChange()" class="input-field w-full font-bold text-xs" placeholder="🎟️ TRUNG TÂM HỖ TRỢ & MUA HÀNG — {storeName}">
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Lời Chào / Phụ Đề (Subtitle)</label>
+                <input type="text" id="inputTicketSubtitle" oninput="onTicketFormChange()" class="input-field w-full text-xs" placeholder="Chào mừng bạn đến với hệ thống hỗ trợ của {storeName}!">
+              </div>
+
+              <!-- Dynamic Lines -->
+              <div class="space-y-2 pt-1">
+                <div class="flex items-center justify-between">
+                  <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                    Các Dòng Giới Thiệu / Dịch Vụ (<span id="ticketLinesCountBadge" class="text-amber-400 font-bold">3 dòng</span>)
+                  </label>
+                  <button type="button" onclick="addTicketInstructionLine()" class="px-2.5 py-0.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 rounded text-[11px] font-bold transition flex items-center gap-1 border border-amber-500/20">
+                    <i class="fa-solid fa-plus text-[10px]"></i> Thêm Dòng
+                  </button>
+                </div>
+
+                <div id="ticketLinesContainer" class="space-y-2">
+                  <!-- Dynamic lines injected by JS -->
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <div>
+                  <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Chữ Trên Nút Bấm Mở Ticket</label>
+                  <input type="text" id="inputTicketButtonLabel" oninput="onTicketFormChange()" class="input-field w-full text-xs font-bold text-emerald-400" placeholder="🎟️ Mở Ticket Hỗ Trợ">
+                </div>
+
+                <div>
+                  <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Màu Viền Embed</label>
+                  <div class="flex items-center gap-2">
+                    <input type="color" id="inputTicketColor" oninput="onTicketColorPicker(this.value)" class="w-8 h-8 rounded border border-white/10 bg-transparent cursor-pointer shrink-0">
+                    <input type="text" id="inputTicketColorHex" oninput="onTicketColorText(this.value)" class="input-field flex-1 font-mono text-xs uppercase" placeholder="#5865F2">
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-white/[0.06]">
+                <div>
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400">Ảnh Thumbnail Góc Phải</label>
+                    <button type="button" onclick="clearTicketThumbnail()" class="text-[10px] text-rose-400 hover:underline">Xóa ảnh</button>
+                  </div>
+                  <input type="text" id="inputTicketThumbnailUrl" oninput="onTicketFormChange()" class="input-field w-full text-xs" placeholder="https://... (để trống nếu không dùng)">
+                </div>
+
+                <div>
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400">Ảnh Banner Chân Embed</label>
+                    <button type="button" onclick="clearTicketBanner()" class="text-[10px] text-rose-400 hover:underline">Xóa banner</button>
+                  </div>
+                  <input type="text" id="inputTicketBannerUrl" oninput="onTicketFormChange()" class="input-field w-full text-xs" placeholder="https://... (để trống nếu không dùng)">
+                </div>
+              </div>
+            </div>
+
+            <!-- Welcome Message inside Ticket Card -->
+            <div class="app-card p-5 space-y-3">
+              <div class="flex items-center justify-between border-b border-white/[0.07] pb-2.5">
+                <span class="text-xs font-extrabold uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
+                  <i class="fa-solid fa-door-open text-emerald-400"></i> Tin Nhắn Chào Mừng Bên Trong Kênh Ticket Con
+                </span>
+                <span class="text-[11px] text-gray-500 font-mono">Dùng {user}, {storeName}</span>
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">Tiêu Đề Chào Mừng (Welcome Title)</label>
+                <input type="text" id="inputTicketWelcomeTitle" oninput="onTicketFormChange()" class="input-field w-full text-xs font-bold" placeholder="🎟️ TICKET HỖ TRỢ — {storeName}">
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">Nội Dung Lời Chào (Welcome Msg)</label>
+                <input type="text" id="inputTicketWelcomeMsg" oninput="onTicketFormChange()" class="input-field w-full text-xs" placeholder="Xin chào <@{userId}>! Cảm ơn bạn đã liên hệ với **{storeName}**.">
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">Lời Dặn Dò (Welcome Note)</label>
+                <input type="text" id="inputTicketWelcomeNote" oninput="onTicketFormChange()" class="input-field w-full text-xs italic text-gray-300" placeholder="💬 *Vui lòng gửi câu hỏi hoặc dịch vụ bạn muốn tư vấn tại kênh này nhé!*">
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Preview Side by Side (Right) -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                <i class="fa-brands fa-discord text-brand-500"></i> Xem Trước Trực Tiếp (Live Discord Preview)
+              </span>
+              <div class="flex items-center gap-1 app-card-nested p-1 rounded-lg border border-white/[0.06]">
+                <button type="button" onclick="toggleTicketPreviewLang('vi')" id="btnTicketPrevLangVi" class="px-2.5 py-0.5 rounded text-[11px] font-bold transition bg-amber-500 text-white">🇻🇳 VI</button>
+                <button type="button" onclick="toggleTicketPreviewLang('en')" id="btnTicketPrevLangEn" class="px-2.5 py-0.5 rounded text-[11px] font-bold transition bg-transparent text-gray-400 hover:text-white">🇬🇧 EN</button>
+              </div>
+            </div>
+
+            <!-- Discord Mock Client Container -->
+            <div class="bg-[#313338] p-4 rounded-xl border border-white/[0.08] shadow-2xl font-sans text-sm sticky top-20">
+              <div class="flex items-center gap-3 mb-2.5">
+                <div class="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-white font-bold text-xs shadow shrink-0">4AM</div>
+                <div class="flex items-center gap-1.5">
+                  <span class="font-bold text-white text-xs">4AM SHOP</span>
+                  <span class="bg-brand-500 text-white text-[9px] px-1 py-0.5 rounded font-semibold leading-none">APP</span>
+                  <span class="text-[10px] text-gray-400">Hôm nay lúc 12:00</span>
+                </div>
+              </div>
+
+              <!-- Ticket Embed Preview Box -->
+              <div id="prevTicketEmbedBox" class="ml-10 border-l-4 bg-[#2B2D31] rounded-r-lg p-3.5 space-y-2.5 relative overflow-hidden" style="border-color: #5865F2;">
+                <img id="prevTicketThumbnail" src="" class="w-14 h-14 rounded-lg absolute top-3.5 right-3.5 object-cover border border-white/10 hidden">
+                <h3 id="prevTicketTitle" class="text-white font-bold text-sm pr-16 leading-snug">🎟️ TRUNG TÂM HỖ TRỢ & MUA HÀNG — 4AM STORE</h3>
+                
+                <p id="prevTicketSubtitle" class="text-xs text-gray-300 font-medium">Chào mừng bạn đến với hệ thống hỗ trợ của 4AM STORE!</p>
+
+                <!-- Description Lines -->
+                <div id="prevTicketLines" class="space-y-1.5 text-xs text-gray-300 pt-1">
+                  <!-- Injected by JS -->
+                </div>
+
+                <!-- Banner Image -->
+                <div id="prevTicketBannerBox" class="mt-2.5 rounded-lg overflow-hidden border border-white/10 hidden">
+                  <img id="prevTicketBanner" src="" class="w-full max-h-48 object-cover">
+                </div>
+              </div>
+
+              <!-- Button Preview -->
+              <div class="ml-10 mt-3">
+                <button type="button" id="prevTicketButton" class="px-4 py-2 bg-[#248046] hover:brightness-110 text-white rounded font-medium text-xs flex items-center gap-2 cursor-default select-none shadow">
+                  <span>🎟️ Mở Ticket Hỗ Trợ</span>
+                </button>
+              </div>
+
+              <div class="ml-10 mt-4 p-2.5 rounded-lg bg-black/20 border border-white/5 text-[11px] text-gray-400 space-y-1">
+                <div class="text-gray-300 font-bold flex items-center gap-1">
+                  <i class="fa-solid fa-circle-info text-amber-400"></i> Hoạt động trên Discord:
+                </div>
+                <div>• Khi khách bấm nút trên, bot sẽ tự tạo kênh chat riêng với tiền tố <span id="prevTicketPrefixBadge" class="font-mono text-emerald-400 bg-black/30 px-1 py-0.5 rounded">ticket-support-...</span></div>
+                <div>• Kênh sẽ tự động cấp quyền riêng tư cho khách và staff phụ trách.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ==================== TOAST NOTIFICATION ==================== -->
+  <div id="toast" class="fixed bottom-6 right-6 px-4 py-2.5 rounded-xl shadow-2xl text-white text-xs font-bold z-50 transition transform translate-y-20 opacity-0 flex items-center gap-2 bg-emerald-600 border border-white/10">
+    <i class="fa-solid fa-circle-check text-sm"></i>
+    <span id="toastMsg">Thao tác thành công!</span>
+  </div>
+
+  <!-- ==================== LOGIC & SCRIPTS ==================== -->
+  <script>
+    let storeData = { sellers: {}, categories: {} };
+    let authToken = localStorage.getItem('4am_admin_token') || '';
+    let currentFetchedUser = null;
+
+    // Check login state
+    if (!authToken) {
+      document.getElementById('loginModal').classList.remove('hidden');
+    }
+
+    async function submitLogin() {
+      const pass = document.getElementById('loginPassword').value;
+      const errEl = document.getElementById('loginError');
+      errEl.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pass })
+        });
+        const json = await res.json();
+        if (json.ok) {
+          authToken = json.token;
+          localStorage.setItem('4am_admin_token', authToken);
+          document.getElementById('loginModal').classList.add('hidden');
+          loadData();
+        } else {
+          errEl.innerText = json.error || 'Sai mật khẩu!';
+          errEl.classList.remove('hidden');
+        }
+      } catch (e) {
+        errEl.innerText = 'Không kết nối được server.';
+        errEl.classList.remove('hidden');
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem('4am_admin_token');
+      location.reload();
+    }
+
+    function showToast(msg, isError) {
+      const t = document.getElementById('toast');
+      const m = document.getElementById('toastMsg');
+      m.innerText = msg;
+      t.className = 'fixed bottom-6 right-6 px-4 py-2.5 rounded-xl shadow-2xl text-white text-xs font-bold z-50 transition transform flex items-center gap-2 border border-white/10 ' + (isError ? 'bg-rose-600' : 'bg-emerald-600');
+      t.classList.remove('translate-y-20', 'opacity-0');
+      setTimeout(function() {
+        t.classList.add('translate-y-20', 'opacity-0');
+      }, 3000);
+    }
+
+    function switchTab(tabId) {
+      ['tabSellers', 'tabProducts', 'tabSettings', 'tabTickets'].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+      });
+      const activeEl = document.getElementById(tabId);
+      if (activeEl) activeEl.classList.remove('hidden');
+
+      const tabs = {
+        tabSellers: 'btnTabSellers',
+        tabProducts: 'btnTabProducts',
+        tabSettings: 'btnTabSettings',
+        tabTickets: 'btnTabTickets'
+      };
+
+      Object.entries(tabs).forEach(function(entry) {
+        const tId = entry[0];
+        const btnId = entry[1];
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        if (tId === tabId) {
+          btn.classList.add('active');
+          btn.classList.remove('text-gray-400', 'hover:bg-white/[0.03]');
+        } else {
+          btn.classList.remove('active');
+          btn.classList.add('text-gray-400', 'hover:bg-white/[0.03]');
+        }
+      });
+
+      if (tabId === 'tabSettings') updateLivePreview();
+      if (tabId === 'tabProducts') updateProductTabPreview();
+      if (tabId === 'tabTickets') {
+        renderTicketForm();
+        renderTicketPreview();
+      }
+    }
+
+    async function loadData() {
+      try {
+        const res = await fetch('/api/data');
+        const json = await res.json();
+        if (json.ok) {
+          storeData = json.data;
+          renderAll();
+          if (json.botInfo && json.botInfo.user) {
+            document.getElementById('botStatusText').innerText = 'Online (@' + json.botInfo.user.tag + ')';
+          }
+        }
+      } catch (e) {
+        console.error(e);
+        showToast('Lỗi khi tải dữ liệu từ bot', true);
+      }
+    }
+
+    function renderAll() {
+      document.getElementById('headerStoreName').innerText = storeData.storeName || '4AM STORE';
+      document.getElementById('statSellersCount').innerText = Object.keys(storeData.sellers || {}).length;
+      document.getElementById('statProductsCount').innerText = Object.keys(storeData.categories || {}).length;
+
+      initMenuEmbedData();
+      loadEditLangFields();
+      renderSellers();
+      renderProducts();
+      updateLivePreview();
+      updateProductTabPreview();
+      renderTicketForm();
+    }
+
+    // ==========================================
+    // RENDER SELLERS
+    // ==========================================
+    function renderSellers() {
+      const container = document.getElementById('sellersContainer');
+      container.innerHTML = '';
+
+      // Ensure shop_common exists
+      if (!storeData.sellers['shop_common']) {
+        storeData.sellers['shop_common'] = {
+          isShop: true,
+          name: 'STK Chung của Shop',
+          accounts: [{ bank: 'MB Bank', account: '', owner: storeData.storeName || '4AM STORE', qr: '' }]
+        };
+      }
+
+      // 1. Render Shop Common Card at top (spans 2 columns)
+      const shopSeller = storeData.sellers['shop_common'];
+      const shopCard = document.createElement('div');
+      shopCard.className = 'app-card p-5 space-y-4 border border-amber-500/30 col-span-1 xl:col-span-2 relative bg-gradient-to-r from-amber-500/[0.04] via-transparent to-transparent hover-lift';
+
+      let shopAccountsHtml = (shopSeller.accounts || []).map(function(acc, idx) {
+        return '<div class="app-card-nested p-3.5 border border-white/[0.06] relative group transition hover:border-amber-500/30">' +
+          '<div class="flex items-center justify-between mb-2">' +
+            '<span class="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">STK #' + (idx + 1) + '</span>' +
+            '<button onclick="deleteSellerAccount(\'shop_common\', ' + idx + ')" title="Xóa STK này" class="text-gray-500 hover:text-rose-400 text-xs p-1 transition">' +
+              '<i class="fa-solid fa-trash-can"></i>' +
+            '</button>' +
+          '</div>' +
+          '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">' +
+            '<div>' +
+              '<label class="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Ngân Hàng / Ví</label>' +
+              '<input type="text" value="' + (acc.bank || '') + '" onchange="updateSellerAccount(\'shop_common\', ' + idx + ', \'bank\', this.value)" class="input-field w-full py-1 text-xs font-semibold" placeholder="VD: MB Bank, MoMo">' +
+            '</div>' +
+            '<div>' +
+              '<label class="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Số Tài Khoản / SĐT</label>' +
+              '<input type="text" value="' + (acc.account || '') + '" onchange="updateSellerAccount(\'shop_common\', ' + idx + ', \'account\', this.value)" class="input-field w-full py-1 text-xs font-mono font-bold text-amber-400" placeholder="0123456789">' +
+            '</div>' +
+            '<div>' +
+              '<label class="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Chủ Tài Khoản</label>' +
+              '<input type="text" value="' + (acc.owner || '') + '" onchange="updateSellerAccount(\'shop_common\', ' + idx + ', \'owner\', this.value)" class="input-field w-full py-1 text-xs font-semibold" placeholder="4AM STORE">' +
+            '</div>' +
+            '<div>' +
+              '<label class="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Link Ảnh QR Code</label>' +
+              '<input type="text" value="' + (acc.qr || '') + '" onchange="updateSellerAccount(\'shop_common\', ' + idx + ', \'qr\', this.value)" class="input-field w-full py-1 text-xs" placeholder="https://...">' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      shopCard.innerHTML = 
+        '<div class="flex items-center justify-between border-b border-white/[0.07] pb-3.5">' +
+          '<div class="flex items-center gap-3">' +
+            '<div class="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center text-lg font-bold border border-amber-500/30 shadow-sm">' +
+              '<i class="fa-solid fa-building-columns"></i>' +
+            '</div>' +
+            '<div>' +
+              '<div class="flex items-center gap-2">' +
+                '<span class="font-extrabold text-white text-sm">STK Chung Của Shop</span>' +
+                '<span class="text-[9px] font-mono text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded-full font-bold">Mặc định</span>' +
+              '</div>' +
+              '<div class="text-[11px] text-gray-400 mt-0.5">Dành cho các mặt hàng bán trực tiếp bởi cửa hàng (không qua seller riêng)</div>' +
+            '</div>' +
+          '</div>' +
+          '<button onclick="addSellerAccount(\'shop_common\')" class="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm">' +
+            '<i class="fa-solid fa-plus text-[10px]"></i> Thêm STK Chung' +
+          '</button>' +
+        '</div>' +
+        '<div class="space-y-2">' +
+          '<div class="grid grid-cols-1 md:grid-cols-2 gap-3">' +
+            (shopAccountsHtml || '<p class="text-xs text-gray-500 italic p-3 text-center col-span-2">Chưa có STK chung nào. Hãy bấm "Thêm STK Chung"</p>') +
+          '</div>' +
+        '</div>';
+      container.appendChild(shopCard);
+
+      // 2. Render Discord Sellers
+      Object.entries(storeData.sellers || {}).forEach(function(pair) {
+        const key = pair[0];
+        const seller = pair[1];
+        if (key === 'shop_common' || seller.isShop) return;
+
+        const card = document.createElement('div');
+        card.className = 'app-card p-5 space-y-4 border border-white/[0.08] relative hover-lift';
+
+        let accountsHtml = (seller.accounts || []).map(function(acc, idx) {
+          return '<div class="app-card-nested p-3.5 border border-white/[0.06] relative group transition hover:border-brand-500/30">' +
+            '<div class="flex items-center justify-between mb-2">' +
+              '<span class="text-[10px] font-mono font-bold text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded">STK #' + (idx + 1) + '</span>' +
+              '<button onclick="deleteSellerAccount(\'' + key + '\', ' + idx + ')" title="Xóa STK này" class="text-gray-500 hover:text-rose-400 text-xs p-1 transition">' +
+                '<i class="fa-solid fa-trash-can"></i>' +
+              '</button>' +
+            '</div>' +
+            '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">' +
+              '<div>' +
+                '<label class="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Ngân Hàng / Ví</label>' +
+                '<input type="text" value="' + (acc.bank || '') + '" onchange="updateSellerAccount(\'' + key + '\', ' + idx + ', \'bank\', this.value)" class="input-field w-full py-1 text-xs font-semibold" placeholder="VD: MB Bank, MoMo">' +
+              '</div>' +
+              '<div>' +
+                '<label class="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Số Tài Khoản / SĐT</label>' +
+                '<input type="text" value="' + (acc.account || '') + '" onchange="updateSellerAccount(\'' + key + '\', ' + idx + ', \'account\', this.value)" class="input-field w-full py-1 text-xs font-mono font-bold text-emerald-400" placeholder="0123456789">' +
+              '</div>' +
+              '<div>' +
+                '<label class="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Chủ Tài Khoản</label>' +
+                '<input type="text" value="' + (acc.owner || '') + '" onchange="updateSellerAccount(\'' + key + '\', ' + idx + ', \'owner\', this.value)" class="input-field w-full py-1 text-xs font-semibold" placeholder="NGUYEN VAN A">' +
+              '</div>' +
+              '<div>' +
+                '<label class="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Link Ảnh QR Code</label>' +
+                '<input type="text" value="' + (acc.qr || '') + '" onchange="updateSellerAccount(\'' + key + '\', ' + idx + ', \'qr\', this.value)" class="input-field w-full py-1 text-xs" placeholder="https://...">' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+
+        const dId = seller.discordId || key;
+        const avatarUrl = seller.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png';
+        const uname = seller.username ? '@' + seller.username : dId;
+
+        card.innerHTML = 
+          '<div class="flex items-start justify-between gap-3 border-b border-white/[0.07] pb-3.5">' +
+            '<div class="flex items-center gap-3 min-w-0">' +
+              '<img src="' + avatarUrl + '" referrerpolicy="no-referrer" onerror="this.src=\'https://cdn.discordapp.com/embed/avatars/0.png\'" class="w-11 h-11 rounded-full border border-brand-500/40 object-cover shadow bg-black/40 shrink-0">' +
+              '<div class="min-w-0">' +
+                '<div class="flex items-center gap-1.5 flex-wrap">' +
+                  '<span class="font-extrabold text-white text-xs truncate">' + uname + '</span>' +
+                  '<span class="text-[9px] font-mono text-brand-400 bg-brand-500/10 border border-brand-500/25 px-1.5 py-0.5 rounded">' + dId + '</span>' +
+                '</div>' +
+                '<div class="text-[10px] text-gray-400 mt-0.5 truncate">' + (seller.globalName ? 'Tên Discord: ' + seller.globalName : 'Seller Discord') + '</div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="flex items-center gap-1 shrink-0">' +
+              '<button onclick="refreshSellerFromDiscord(\'' + key + '\')" title="Đồng bộ lại Avatar & Tên Discord" class="text-xs text-brand-400 hover:text-brand-300 p-1.5 rounded-lg hover:bg-brand-500/10 transition">' +
+                '<i class="fa-solid fa-arrows-rotate"></i>' +
+              '</button>' +
+              '<button onclick="deleteSeller(\'' + key + '\')" title="Xóa người bán này" class="text-xs text-rose-400 hover:text-rose-300 p-1.5 rounded-lg hover:bg-rose-500/10 transition">' +
+                '<i class="fa-solid fa-trash-can"></i>' +
+              '</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="space-y-2.5">' +
+            '<div class="flex items-center justify-between">' +
+              '<span class="text-[10px] font-bold uppercase tracking-wider text-gray-400">Danh Sách STK Nhận Tiền:</span>' +
+              '<button onclick="addSellerAccount(\'' + key + '\')" class="text-xs text-brand-400 hover:text-brand-300 font-bold flex items-center gap-1">' +
+                '<i class="fa-solid fa-plus text-[10px]"></i> Thêm STK' +
+              '</button>' +
+            '</div>' +
+            '<div class="space-y-2.5">' +
+              (accountsHtml || '<p class="text-xs text-gray-500 italic p-3 text-center app-card-nested">Chưa có STK nào. Hãy bấm "Thêm STK"</p>') +
+            '</div>' +
+          '</div>';
+        container.appendChild(card);
+      });
+    }
+
+    function updateSellerName(key, val) {
+      if (storeData.sellers[key]) {
+        storeData.sellers[key].name = val;
+        renderProducts();
+      }
+    }
+    function updateSellerAccount(key, idx, field, val) {
+      if (storeData.sellers[key] && storeData.sellers[key].accounts && storeData.sellers[key].accounts[idx]) {
+        storeData.sellers[key].accounts[idx][field] = val;
+        renderProducts();
+      }
+    }
+    function addSellerAccount(key) {
+      if (!storeData.sellers[key].accounts) storeData.sellers[key].accounts = [];
+      storeData.sellers[key].accounts.push({ bank: 'MB Bank', account: '', owner: (key === 'shop_common' ? (storeData.storeName || '4AM STORE') : ''), qr: '' });
+      renderSellers();
+      renderProducts();
+    }
+    function deleteSellerAccount(key, idx) {
+      if (storeData.sellers[key] && storeData.sellers[key].accounts) {
+        storeData.sellers[key].accounts.splice(idx, 1);
+        renderSellers();
+        renderProducts();
+      }
+    }
+    function deleteSeller(key) {
+      if (key === 'shop_common') {
+        alert('Không thể xóa STK chung của Shop!');
+        return;
+      }
+      const seller = storeData.sellers[key];
+      const displayName = seller?.name || seller?.username || key;
+      if (confirm('Bạn có chắc chắn muốn xóa seller "' + displayName + '" không?')) {
+        delete storeData.sellers[key];
+        renderSellers();
+        renderProducts();
+        showToast('Đã xóa người bán: ' + displayName);
+      }
+    }
+
+    function openAddSellerModal() {
+      currentFetchedUser = null;
+      document.getElementById('modalSellerDiscordId').value = '';
+      document.getElementById('modalBankAccount').value = '';
+      document.getElementById('modalBankOwner').value = '';
+      document.getElementById('modalBankQr').value = '';
+      document.getElementById('modalDiscordPreview').classList.add('hidden');
+      document.getElementById('btnConfirmAdd').disabled = true;
+      document.getElementById('addSellerModal').classList.remove('hidden');
+    }
+
+    function closeAddSellerModal() {
+      document.getElementById('addSellerModal').classList.add('hidden');
+    }
+
+    async function checkDiscordUser() {
+      const input = document.getElementById('modalSellerDiscordId');
+      const id = input.value.trim();
+      if (!id || !/^\d{17,20}$/.test(id)) {
+        alert('Vui lòng nhập Discord User ID hợp lệ (gồm 17 - 20 chữ số).');
+        return;
+      }
+
+      const btn = document.getElementById('btnCheckId');
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tìm...';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/discord-user/' + id);
+        const json = await res.json();
+        if (json.ok && json.user) {
+          currentFetchedUser = json.user;
+          document.getElementById('previewAvatar').src = json.user.avatar;
+          document.getElementById('previewUsername').innerText = '@' + json.user.username;
+          document.getElementById('previewGlobalName').innerText = json.user.globalName ? 'Tên hiển thị: ' + json.user.globalName : '';
+          document.getElementById('previewId').innerText = 'ID: ' + json.user.id;
+          document.getElementById('modalDiscordPreview').classList.remove('hidden');
+          
+          if (!document.getElementById('modalBankOwner').value && json.user.globalName) {
+            document.getElementById('modalBankOwner').value = json.user.globalName.toUpperCase();
+          }
+          document.getElementById('btnConfirmAdd').disabled = false;
+        } else {
+          alert(json.error || 'Không tìm thấy người dùng Discord với ID này!');
+          document.getElementById('modalDiscordPreview').classList.add('hidden');
+          document.getElementById('btnConfirmAdd').disabled = true;
+        }
+      } catch (e) {
+        alert('Lỗi khi kết nối đến bot Discord!');
+      } finally {
+        btn.innerHTML = orig;
+        btn.disabled = false;
+      }
+    }
+
+    async function confirmAddSeller() {
+      if (!currentFetchedUser) return;
+      const key = currentFetchedUser.id;
+      const displayName = currentFetchedUser.globalName || currentFetchedUser.username;
+
+      const bank = document.getElementById('modalBankName').value.trim() || 'MB Bank';
+      const account = document.getElementById('modalBankAccount').value.trim();
+      const owner = document.getElementById('modalBankOwner').value.trim();
+      const qr = document.getElementById('modalBankQr').value.trim();
+
+      const accounts = [];
+      if (account) {
+        accounts.push({ bank: bank, account: account, owner: owner, qr: qr });
+      } else {
+        accounts.push({ bank: 'MB Bank', account: '', owner: '', qr: '' });
+      }
+
+      storeData.sellers[key] = {
+        discordId: currentFetchedUser.id,
+        username: currentFetchedUser.username,
+        globalName: currentFetchedUser.globalName,
+        avatar: currentFetchedUser.avatar,
+        name: displayName,
+        accounts: accounts
+      };
+
+      closeAddSellerModal();
+      renderSellers();
+      renderProducts();
+      await saveConfig();
+      showToast('Đã thêm người bán @' + currentFetchedUser.username + ' thành công!');
+    }
+
+    async function refreshSellerFromDiscord(key) {
+      const seller = storeData.sellers[key];
+      const dId = seller?.discordId || key;
+      try {
+        const res = await fetch('/api/discord-user/' + dId);
+        const json = await res.json();
+        if (json.ok && json.user) {
+          seller.username = json.user.username;
+          seller.globalName = json.user.globalName;
+          seller.avatar = json.user.avatar;
+          renderSellers();
+          renderProducts();
+          await saveConfig();
+          showToast('Đã cập nhật avatar & username thật cho @' + json.user.username);
+        } else {
+          showToast(json.error || 'Không thể làm mới info Discord', true);
+        }
+      } catch (e) {
+        showToast('Lỗi khi kết nối đến Discord', true);
+      }
+    }
+
+    // ==========================================
+    // RENDER PRODUCTS & LIVE PREVIEW (2-COLUMN MASTER-DETAIL)
+    // ==========================================
+    let selectedProductKey = null;
+    let productPreviewGlobalLang = 'vi';
+    let expandedCardKeys = {};
+
+    function toggleCardCollapse(key, e) {
+      if (e && e.target && e.target.closest('button, input, select, a')) {
+        return;
+      }
+      if (expandedCardKeys[key] === undefined) {
+        expandedCardKeys[key] = (key === selectedProductKey);
+      }
+      expandedCardKeys[key] = !expandedCardKeys[key];
+      if (expandedCardKeys[key]) {
+        selectedProductKey = key;
+        updateProductTabPreview();
+      }
+      renderProducts();
+    }
+
+    function expandAllCards(expand) {
+      Object.keys(storeData.categories || {}).forEach(function(k) {
+        expandedCardKeys[k] = expand;
+      });
+      renderProducts();
+    }
+
+    function colorToHex(c) {
+      if (!c) return '#5865F2';
+      if (typeof c === 'string' && c.startsWith('#')) return c;
+      return '#' + Number(c).toString(16).padStart(6, '0');
+    }
+
+    function hexToColor(hex) {
+      return parseInt((hex || '').replace('#', ''), 16) || 0x5865F2;
+    }
+
+    function setProductPreviewGlobalLang(lang) {
+      productPreviewGlobalLang = lang;
+      updateProductTabPreview();
+    }
+
+    function selectProductForPreview(key) {
+      if (!storeData.categories || !storeData.categories[key]) return;
+      selectedProductKey = key;
+      expandedCardKeys[key] = true;
+      updateProductTabPreview();
+      renderProducts();
+    }
+
+    function highlightSelectedCard(key) {
+      Object.keys(storeData.categories || {}).forEach(function(k) {
+        const cardEl = document.getElementById('productCard_' + k);
+        const badgeEl = document.getElementById('productActiveBadge_' + k);
+        if (!cardEl) return;
+        if (k === key) {
+          cardEl.classList.add('border-brand-500/60', 'ring-1', 'ring-brand-500/25', 'bg-brand-500/[0.02]');
+          cardEl.classList.remove('border-white/[0.08]');
+          if (badgeEl) {
+            badgeEl.innerHTML = '<span class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-brand-500/20 text-brand-300 border border-brand-500/30 flex items-center gap-1.5"><i class="fa-solid fa-eye text-[9px]"></i> Đang xem</span>';
+          }
+        } else {
+          cardEl.classList.remove('border-brand-500/60', 'ring-1', 'ring-brand-500/25', 'bg-brand-500/[0.02]');
+          cardEl.classList.add('border-white/[0.08]');
+          if (badgeEl) {
+            badgeEl.innerHTML = '<button type="button" onclick="selectProductForPreview(\'' + k + '\')" class="px-2 py-0.5 rounded text-[10px] font-semibold text-gray-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.07] transition flex items-center gap-1"><i class="fa-regular fa-eye text-[9px]"></i> Xem trước</button>';
+          }
+        }
+      });
+    }
+
+    function updateProductTabPreview() {
+      if (!storeData.categories || Object.keys(storeData.categories).length === 0) return;
+      if (!selectedProductKey || !storeData.categories[selectedProductKey]) {
+        selectedProductKey = Object.keys(storeData.categories)[0];
+      }
+      const key = selectedProductKey;
+      const cat = storeData.categories[key];
+      if (!cat) return;
+
+      const isEn = productPreviewGlobalLang === 'en';
+
+      // Update dropdown selector value
+      const selEl = document.getElementById('prodPreviewSelect');
+      if (selEl && selEl.value !== key) selEl.value = key;
+
+      // Update Seller info badge & Handlers list
+      const curSellerKey = cat.seller || (storeData.sellers?.['shop_common'] ? 'shop_common' : '');
+      const curSeller = storeData.sellers?.[curSellerKey] || {};
+
+      const handlers = Array.isArray(cat.handlers) && cat.handlers.length > 0
+        ? cat.handlers
+        : (cat.seller && cat.seller !== 'shop_common' ? [cat.seller] : []);
+
+      let handlerLabels = [];
+      for (const h of handlers) {
+        const s = storeData.sellers?.[h];
+        if (s) {
+          handlerLabels.push(s.username ? '@' + s.username : (s.name || h));
+        } else {
+          handlerLabels.push(h.length > 8 ? '@' + h.slice(0, 4) + '...' + h.slice(-4) : '@' + h);
+        }
+      }
+
+      const sellerBadge = document.getElementById('previewSellerBadge');
+      if (sellerBadge) {
+        if (handlerLabels.length > 0) {
+          sellerBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-brand-500/15 text-brand-300 border border-brand-500/30 truncate max-w-[190px]';
+          sellerBadge.innerHTML = '<i class="fa-solid fa-users text-[9px] mr-1"></i> ' + handlerLabels.join(', ');
+          sellerBadge.title = 'Phụ trách & ping: ' + handlerLabels.join(', ');
+        } else {
+          sellerBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 truncate max-w-[190px]';
+          sellerBadge.innerHTML = '<i class="fa-solid fa-building text-[9px] mr-1"></i> STK Chung';
+          sellerBadge.title = 'Dùng STK chung của shop, ping Staff';
+        }
+      }
+
+      const pingListEl = document.getElementById('prodEmbedPingList');
+      if (pingListEl) {
+        pingListEl.innerHTML = handlerLabels.length > 0
+          ? '<span class="text-white">' + handlerLabels.join(', ') + '</span> + <span class="text-amber-300">Staff</span>'
+          : '<span class="text-amber-300">Staff Role</span> (STK Chung)';
+      }
+
+      // Language buttons styling
+      const bVi = document.getElementById('btnProdPrevLangVi');
+      const bEn = document.getElementById('btnProdPrevLangEn');
+      if (bVi && bEn) {
+        bVi.className = 'px-2.5 py-0.5 rounded text-[11px] font-bold transition ' + (!isEn ? 'bg-brand-500 text-white shadow-sm' : 'bg-transparent text-gray-400 hover:text-white');
+        bEn.className = 'px-2.5 py-0.5 rounded text-[11px] font-bold transition ' + (isEn ? 'bg-brand-500 text-white shadow-sm' : 'bg-transparent text-gray-400 hover:text-white');
+      }
+
+      // Values for preview
+      const label = isEn ? (cat.labelEn || cat.label || '') : (cat.label || '');
+      const title = isEn ? (cat.titleEn || `Price List - ${label}`) : (cat.title || `Bảng Giá ${label}`);
+      const subtitle = isEn ? (cat.subtitleEn || (label.toUpperCase() + ':')) : (cat.subtitle || (label.toUpperCase() + ':'));
+      const items = (isEn && cat.itemsEn && cat.itemsEn.length) ? cat.itemsEn : (cat.items || []);
+
+      const titleEl = document.getElementById('prodEmbedTitle');
+      const subEl = document.getElementById('prodEmbedSub');
+      const itemsEl = document.getElementById('prodEmbedItems');
+      const bannerEl = document.getElementById('prodEmbedBanner');
+      const btnEl = document.getElementById('prodEmbedBtn');
+      const boxEl = document.getElementById('prodEmbedBox');
+      const botNameEl = document.getElementById('prodBotName');
+
+      if (botNameEl) botNameEl.innerText = storeData.storeName || '4AM SHOP';
+      if (titleEl) titleEl.innerText = title;
+      if (subEl) subEl.innerHTML = (cat.emoji ? renderEmojiHtml(cat.emoji, 'w-4 h-4 inline-block align-middle mr-1.5') : '') + '<strong>' + subtitle + '</strong>';
+
+      const handlerPrefixEl = document.getElementById('prodEmbedHandlerPrefix');
+      const handlerNamesEl = document.getElementById('prodEmbedHandlerNames');
+      if (handlerPrefixEl) {
+        handlerPrefixEl.innerText = isEn ? 'Staff in charge:' : 'Người phụ trách:';
+      }
+      if (handlerNamesEl) {
+        handlerNamesEl.innerText = handlerLabels.length > 0
+          ? handlerLabels.join(', ')
+          : (isEn ? 'Staff 24/7' : 'Staff 24/7 (STK Shop)');
+      }
+
+      if (itemsEl) {
+        itemsEl.innerHTML = items.length
+          ? items.map(it => `<p class="leading-relaxed truncate">• ${it}</p>`).join('')
+          : '<p class="italic text-gray-500">• (Chưa có gói giá)</p>';
+      }
+      if (bannerEl) {
+        if (cat.bannerUrl && cat.bannerUrl.trim()) {
+          bannerEl.src = cat.bannerUrl.trim();
+          bannerEl.classList.remove('hidden');
+        } else {
+          bannerEl.classList.add('hidden');
+        }
+      }
+      if (btnEl) {
+        btnEl.innerText = isEn ? `🎟️ Open Ticket to buy ${label}` : `🎟️ Mở Ticket mua ${label}`;
+      }
+      if (boxEl) {
+        boxEl.style.borderColor = colorToHex(cat.color);
+      }
+    }
+
+    function onCategoryFieldInput(key, field, val) {
+      if (!storeData.categories[key]) return;
+      if (field === 'color') {
+        storeData.categories[key].color = hexToColor(val);
+      } else {
+        storeData.categories[key][field] = val;
+      }
+      selectedProductKey = key;
+      updateProductTabPreview();
+      highlightSelectedCard(key);
+    }
+
+    function onCategoryColorInput(key, val) {
+      if (!storeData.categories[key]) return;
+      storeData.categories[key].color = hexToColor(val);
+      const hexInput = document.getElementById('catColorHex_' + key);
+      if (hexInput) hexInput.value = val;
+      selectedProductKey = key;
+      updateProductTabPreview();
+      highlightSelectedCard(key);
+    }
+
+    function onCategoryColorHexInput(key, val) {
+      if (!storeData.categories[key]) return;
+      if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+        storeData.categories[key].color = hexToColor(val);
+        const colorInput = document.getElementById('catColorPicker_' + key);
+        if (colorInput) colorInput.value = val;
+        selectedProductKey = key;
+        updateProductTabPreview();
+        highlightSelectedCard(key);
+      }
+    }
+
+    function clearCategoryBanner(key) {
+      if (!storeData.categories[key]) return;
+      storeData.categories[key].bannerUrl = '';
+      const input = document.getElementById('catBannerInput_' + key);
+      if (input) input.value = '';
+      selectedProductKey = key;
+      updateProductTabPreview();
+      showToast('Đã xóa ảnh banner sản phẩm!');
+    }
+
+    function updateCategoryKey(oldKey, newKey) {
+      newKey = (newKey || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+      if (!newKey || newKey === oldKey) {
+        renderProducts();
+        return;
+      }
+      if (storeData.categories[newKey]) {
+        alert('Mã ID "' + newKey + '" đã tồn tại! Vui lòng chọn mã khác.');
+        renderProducts();
+        return;
+      }
+      const newCats = {};
+      for (const [k, v] of Object.entries(storeData.categories)) {
+        if (k === oldKey) {
+          newCats[newKey] = v;
+        } else {
+          newCats[k] = v;
+        }
+      }
+      storeData.categories = newCats;
+      selectedProductKey = newKey;
+      renderProducts();
+      showToast('Đã đổi mã ID: "' + oldKey + '" ➔ "' + newKey + '"');
+    }
+
+    
+    // ==========================================
+    // ADVANCED EMOJI & ANIMATED PICKER SYSTEM
+    // ==========================================
+    let serverEmojis = [];
+    let currentEmojiTab = 'server';
+    let currentEmojiTargetKey = null;
+    let emojiSearchQuery = '';
+
+    const POPULAR_ANIMATED_EMOJIS = [
+      { name: '4am_moneydream', id: '1379359729817485352', format: '<a:4am_moneydream:1379359729817485352>', label: 'Money Dream (GIF)' },
+      { name: '4am_kcd', id: '1379359467568627742', format: '<a:4am_kcd:1379359467568627742>', label: 'Kim Cương Đỏ (GIF)' },
+      { name: '4am_kcv', id: '1379359576016683018', format: '<a:4am_kcv:1379359576016683018>', label: 'Kim Cương Vàng (GIF)' },
+      { name: '4am_blackheart', id: '1379359765271810089', format: '<a:4am_blackheart:1379359765271810089>', label: 'Black Heart (GIF)' },
+      { name: '4am_antiamaterasu', id: '1379359612196618300', format: '<a:4am_antiamaterasu:1379359612196618300>', label: 'Amaterasu (GIF)' },
+      { name: '4am_ld', id: '1379359684145971210', format: '<a:4am_ld:1379359684145971210>', label: 'Lửa Đỏ (GIF)' },
+      { name: '4am_lh', id: '1379359729817485352', format: '<a:4am_lh:1379359729817485352>', label: 'Lửa Hồng (GIF)' },
+      { name: '4am_lx', id: '1379359800000000001', format: '<a:4am_lx:1379359800000000001>', label: 'Lửa Xanh (GIF)' },
+      { name: '4am_instalove', id: '1379359850000000002', format: '<a:4am_instalove:1379359850000000002>', label: 'Insta Love (GIF)' },
+      { name: '4am_zerotwoclapping', id: '1379359900000000003', format: '<a:4am_zerotwoclapping:1379359900000000003>', label: 'Zero Two (GIF)' }
+    ];
+
+    const POPULAR_UNICODE_EMOJIS = {
+      hot: ['🔥', '⚡', '💎', '🔮', '🌸', '🚀', '👑', '⭐', '✨', '📦', '🏷️', '🎉'],
+      media: ['🎮', '🎵', '🎬', '🤖', '📺', '🍿', '🎧', '🎨', '🕹️', '💻', '📱', '🌐'],
+      tools: ['💰', '💳', '🎫', '🎁', '🛒', '💸', '🛡️', '🔒', '🔑', '🏆', '🎯', '📌']
+    };
+
+    function renderEmojiHtml(emoji, className, alt) {
+      if (!emoji) return '📦';
+      className = className || 'w-6 h-6';
+      emoji = String(emoji).trim();
+      const match = emoji.match(/^<(a)?:([a-zA-Z0-9_~]+):(\d+)>$/);
+      if (match) {
+        const isAnim = !!match[1];
+        const id = match[3];
+        const name = match[2];
+        const ext = isAnim ? 'gif' : 'png';
+        return '<img src="https://cdn.discordapp.com/emojis/' + id + '.' + ext + '?size=64" alt="' + (alt || name) + '" title="' + name + '" class="' + className + ' object-contain inline-block select-none pointer-events-none" onerror="this.outerHTML=\'📦\'">';
+      }
+      if (/^https?:\/\//i.test(emoji)) {
+        return '<img src="' + emoji + '" class="' + className + ' object-contain inline-block select-none pointer-events-none" onerror="this.outerHTML=\'📦\'">';
+      }
+      return '<span class="inline-block font-emoji pointer-events-none">' + emoji + '</span>';
+    }
+
+    async function loadServerEmojis() {
+      try {
+        const res = await fetch('/api/bot-emojis');
+        const json = await res.json();
+        if (json.ok && Array.isArray(json.emojis)) {
+          serverEmojis = json.emojis;
+          const countEl = document.getElementById('countServerEmojis');
+          const statusEl = document.getElementById('emojiPickerStatus');
+          if (countEl) countEl.innerText = serverEmojis.length;
+          if (statusEl) statusEl.innerText = serverEmojis.length + ' server emojis';
+          renderEmojiContent();
+        }
+      } catch (e) {
+        console.warn('Could not load server emojis:', e);
+      }
+    }
+
+    function switchEmojiTab(tab) {
+      currentEmojiTab = tab;
+      ['server', 'popular', 'unicode'].forEach(function(t) {
+        const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+        if (!btn) return;
+        if (t === tab) {
+          btn.className = 'flex-1 py-1 px-2 rounded-lg font-bold text-[11px] transition bg-brand-500 text-white shadow-sm flex items-center justify-center gap-1.5';
+        } else {
+          btn.className = 'flex-1 py-1 px-2 rounded-lg font-bold text-[11px] transition text-gray-400 hover:text-white flex items-center justify-center gap-1.5';
+        }
+      });
+      renderEmojiContent();
+    }
+
+    function onEmojiSearchInput(val) {
+      emojiSearchQuery = (val || '').trim().toLowerCase();
+      renderEmojiContent();
+    }
+
+    function renderEmojiContent() {
+      const area = document.getElementById('emojiScrollArea');
+      if (!area) return;
+
+      const q = emojiSearchQuery;
+
+      if (currentEmojiTab === 'server') {
+        let list = serverEmojis;
+        if (q) {
+          list = list.filter(e => e.name.toLowerCase().includes(q) || (e.guild && e.guild.toLowerCase().includes(q)));
+        }
+
+        const animList = list.filter(e => e.animated);
+        const staticList = list.filter(e => !e.animated);
+
+        if (list.length === 0) {
+          area.innerHTML = '<div class="p-6 text-center text-gray-400 text-xs italic"><i class="fa-regular fa-face-frown mb-1.5 text-base block"></i>' + (q ? 'Không tìm thấy emoji nào với từ khóa "' + q + '"' : 'Chưa có emoji từ server. Hãy đảm bảo bot ở trong server.') + '</div>';
+          return;
+        }
+
+        let html = '';
+        if (animList.length > 0) {
+          html += '<div class="space-y-1.5">' +
+            '<div class="text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">' +
+              '<i class="fa-solid fa-bolt text-[9px]"></i> Emoji Động Server (' + animList.length + ' GIF)' +
+            '</div>' +
+            '<div class="grid grid-cols-6 gap-2">' +
+              animList.map(e => makeEmojiButton(e.format, e.name, e.url, true)).join('') +
+            '</div>' +
+          '</div>';
+        }
+
+        if (staticList.length > 0) {
+          html += '<div class="space-y-1.5 pt-1">' +
+            '<div class="text-[10px] font-extrabold text-brand-300 uppercase tracking-wider flex items-center gap-1.5">' +
+              '<i class="fa-regular fa-image text-[9px]"></i> Emoji Tĩnh Server (' + staticList.length + ' icon)' +
+            '</div>' +
+            '<div class="grid grid-cols-6 gap-2">' +
+              staticList.map(e => makeEmojiButton(e.format, e.name, e.url, false)).join('') +
+            '</div>' +
+          '</div>';
+        }
+
+        area.innerHTML = html;
+      } else if (currentEmojiTab === 'popular') {
+        let list = POPULAR_ANIMATED_EMOJIS;
+        if (q) {
+          list = list.filter(e => e.name.toLowerCase().includes(q) || e.label.toLowerCase().includes(q));
+        }
+
+        area.innerHTML = '<div class="space-y-1.5">' +
+          '<div class="text-[10px] font-extrabold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">' +
+            '<i class="fa-solid fa-fire text-[9px]"></i> GIF Animated Shop Nổi Bật (' + list.length + ')' +
+          '</div>' +
+          '<div class="grid grid-cols-6 gap-2">' +
+            list.map(e => makeEmojiButton(e.format, e.name, 'https://cdn.discordapp.com/emojis/' + e.id + '.gif?size=64', true)).join('') +
+          '</div>' +
+        '</div>';
+      } else if (currentEmojiTab === 'unicode') {
+        let html = '';
+        const cats = [
+          { title: '🔥 Discord & Shop Hot', list: POPULAR_UNICODE_EMOJIS.hot, color: 'text-amber-400' },
+          { title: '🎮 Game, Media & Phần Mềm', list: POPULAR_UNICODE_EMOJIS.media, color: 'text-emerald-400' },
+          { title: '🛡️ Giao Dịch & Bảo Mật', list: POPULAR_UNICODE_EMOJIS.tools, color: 'text-sky-400' }
+        ];
+
+        cats.forEach(function(c) {
+          let list = c.list;
+          if (q) list = list.filter(em => em.includes(q));
+          if (list.length > 0) {
+            html += '<div class="space-y-1.5">' +
+              '<div class="text-[10px] font-extrabold ' + c.color + ' uppercase tracking-wider">' + c.title + '</div>' +
+              '<div class="grid grid-cols-6 gap-2">' +
+                list.map(em => '<button type="button" onmouseenter="hoverEmoji(\'' + em + '\', \'Unicode Emoji\')" onclick="selectQuickEmoji(\'' + em + '\')" class="w-10 h-10 rounded-xl bg-[#0B0D12] hover:bg-brand-500/20 hover:border-brand-500/50 border border-white/[0.08] text-lg flex items-center justify-center transition active:scale-90 cursor-pointer shadow-sm">' + em + '</button>').join('') +
+              '</div>' +
+            '</div>';
+          }
+        });
+
+        area.innerHTML = html || '<div class="p-6 text-center text-gray-400 text-xs italic">Không tìm thấy emoji unicode nào.</div>';
+      }
+    }
+
+    function makeEmojiButton(formatTag, name, url, isAnim) {
+      const safeTag = formatTag.replace(/\'/g, "\\'");
+      return '<button type="button" onmouseenter="hoverEmoji(\'' + safeTag + '\', \'' + name + '\')" onclick="selectQuickEmoji(\'' + safeTag + '\')" class="w-10 h-10 rounded-xl bg-[#0B0D12] hover:bg-brand-500/20 hover:border-brand-500/50 border border-white/[0.08] flex items-center justify-center transition active:scale-90 cursor-pointer shadow-sm relative group p-1.5" title=":' + name + ':">' +
+        '<img src="' + url + '" class="w-7 h-7 object-contain select-none pointer-events-none" alt="' + name + '">' +
+        (isAnim ? '<span class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 ring-1 ring-black animate-pulse"></span>' : '') +
+      '</button>';
+    }
+
+    function hoverEmoji(tag, name) {
+      const info = document.getElementById('emojiHoverInfo');
+      if (info) {
+        info.innerHTML = '<span class="text-white font-bold">:' + name + ':</span> <span class="text-gray-500 truncate">' + tag + '</span>';
+      }
+    }
+
+    function openEmojiPicker(e, key) {
+      if (e && e.stopPropagation) e.stopPropagation();
+      currentEmojiTargetKey = key;
+      selectedProductKey = key;
+      updateProductTabPreview();
+      highlightSelectedCard(key);
+
+      const popover = document.getElementById('emojiPickerPopover');
+      const input = document.getElementById('emojiSearchInput');
+      const curSel = document.getElementById('emojiCurrentSelection');
+      if (!popover) return;
+
+      const cat = storeData.categories?.[key];
+      if (input) input.value = '';
+      emojiSearchQuery = '';
+
+      if (curSel) {
+        curSel.innerHTML = 'Hiện tại: ' + renderEmojiHtml(cat?.emoji, 'w-4 h-4 inline-block');
+      }
+
+      loadServerEmojis();
+      renderEmojiContent();
+
+      const btn = (e && e.currentTarget) ? e.currentTarget : document.getElementById('catEmojiBtn_' + key);
+      const rect = btn ? btn.getBoundingClientRect() : { left: 100, bottom: 200, top: 160 };
+      
+      popover.classList.remove('hidden');
+
+      const popoverWidth = 380;
+      let left = rect.left;
+      if (left + popoverWidth > window.innerWidth - 16) {
+        left = window.innerWidth - popoverWidth - 16;
+      }
+      if (left < 16) left = 16;
+
+      let top = rect.bottom + 8;
+      if (top + 400 > window.innerHeight && rect.top > 410) {
+        top = rect.top - 410;
+      }
+
+      popover.style.top = top + 'px';
+      popover.style.left = left + 'px';
+
+      if (input) {
+        setTimeout(function() { input.focus(); }, 60);
+      }
+    }
+
+    function closeEmojiPicker() {
+      const popover = document.getElementById('emojiPickerPopover');
+      if (popover) popover.classList.add('hidden');
+      currentEmojiTargetKey = null;
+    }
+
+    function selectQuickEmoji(em) {
+      if (!currentEmojiTargetKey || !storeData.categories?.[currentEmojiTargetKey]) return;
+      storeData.categories[currentEmojiTargetKey].emoji = em;
+      
+      const displayEl = document.getElementById('catEmojiDisplay_' + currentEmojiTargetKey);
+      if (displayEl) displayEl.innerHTML = renderEmojiHtml(em, 'w-6 h-6');
+
+      updateProductTabPreview();
+      closeEmojiPicker();
+      showToast('Đã chọn icon ' + (em.startsWith('<') ? em.split(':')[1] : em));
+    }
+
+    function applyManualEmoji() {
+      const input = document.getElementById('emojiSearchInput');
+      if (!input) return;
+      let val = input.value.trim();
+      if (!val) {
+        closeEmojiPicker();
+        return;
+      }
+      // Remove leading backslash if copied from Discord chat (e.g. \<a:name:id>)
+      val = val.replace(/^\\/, '');
+
+      // Check if user pasted a Discord CDN emoji URL
+      const cdnMatch = val.match(/cdn\.discordapp\.com\/emojis\/(\d+)\.(gif|png|webp)/i);
+      if (cdnMatch) {
+        const id = cdnMatch[1];
+        const isGif = cdnMatch[2].toLowerCase() === 'gif';
+        val = `<${isGif ? 'a' : ''}:emoji:${id}>`;
+      } else if (/^:[a-zA-Z0-9_]+:$/.test(val)) {
+        // If user typed :name: format, search for it in server or popular emojis
+        const pureName = val.slice(1, -1).toLowerCase();
+        const found = serverEmojis.find(e => e.name.toLowerCase() === pureName) ||
+                      POPULAR_ANIMATED_EMOJIS.find(e => e.name.toLowerCase() === pureName);
+        if (found) {
+          val = found.format;
+        }
+      }
+
+      selectQuickEmoji(val);
+    }
+
+    // Close picker when clicking outside
+    document.addEventListener('click', function(e) {
+      const popover = document.getElementById('emojiPickerPopover');
+      if (popover && !popover.classList.contains('hidden')) {
+        if (!popover.contains(e.target) && !e.target.closest('[id^="catEmojiBtn_"]')) {
+          closeEmojiPicker();
+        }
+      }
+    });
+
+    function renderProducts() {
+      const container = document.getElementById('productsContainer');
+      if (!container) return;
+      container.innerHTML = '';
+
+      const catEntries = Object.entries(storeData.categories || {});
+      
+      // Ensure selectedProductKey is valid
+      if (!selectedProductKey || !storeData.categories[selectedProductKey]) {
+        selectedProductKey = catEntries[0] ? catEntries[0][0] : null;
+      }
+
+      // Populate right preview select dropdown
+      const prevSelect = document.getElementById('prodPreviewSelect');
+      if (prevSelect) {
+        prevSelect.innerHTML = catEntries.map(function(pair) {
+          const k = pair[0];
+          const c = pair[1];
+          const isSel = (k === selectedProductKey) ? ' selected' : '';
+          const emPrefix = (c.emoji && c.emoji.startsWith('<a:')) ? '💫 ' : ((c.emoji && c.emoji.startsWith('<:')) ? '🖼️ ' : (c.emoji ? c.emoji + ' ' : '')); return '<option value="' + k + '" style="background-color: #13151B; color: #F1F3F7;"' + isSel + '>' + emPrefix + (c.label || k) + '</option>';
+        }).join('');
+      }
+
+      const countBadge = document.getElementById('prodCardCountBadge');
+      if (countBadge) {
+        countBadge.innerText = catEntries.length + ' sản phẩm';
+      }
+      const countHeader = document.getElementById('prodCardCountHeader');
+      if (countHeader) {
+        countHeader.innerText = catEntries.length;
+      }
+
+      const sellerEntries = Object.entries(storeData.sellers || {});
+      sellerEntries.sort(function(a, b) {
+        if (a[0] === 'shop_common') return -1;
+        if (b[0] === 'shop_common') return 1;
+        return 0;
+      });
+
+      catEntries.forEach(function(pair) {
+        const key = pair[0];
+        const cat = pair[1];
+        const isSelected = (key === selectedProductKey);
+
+        if (expandedCardKeys[key] === undefined) {
+          expandedCardKeys[key] = (key === selectedProductKey);
+        }
+        const isExpanded = !!expandedCardKeys[key];
+
+        const card = document.createElement('div');
+        card.id = 'productCard_' + key;
+        card.className = 'app-card transition-all duration-200 overflow-hidden ' +
+          (isSelected ? 'border-brand-500/60 ring-1 ring-brand-500/25 bg-brand-500/[0.02]' : 'border-white/[0.08]');
+
+        const curSellerKey = cat.seller || (storeData.sellers?.['shop_common'] ? 'shop_common' : (sellerEntries[0] ? sellerEntries[0][0] : ''));
+        const curSeller = storeData.sellers?.[curSellerKey] || {};
+        const isShop = curSellerKey === 'shop_common' || curSeller.isShop;
+
+        // Build seller options (for payment account)
+        const sellerOptions = sellerEntries.map(function(sPair) {
+          const sKey = sPair[0];
+          const sVal = sPair[1];
+          const label = (sKey === 'shop_common' || sVal.isShop)
+            ? '🏢 STK Chung của Shop'
+            : (sVal.username ? '@' + sVal.username : (sVal.name || sVal.discordId || sKey));
+          const isSel = (curSellerKey === sKey) ? ' selected' : '';
+          return '<option value="' + sKey + '" style="background-color: #13151B; color: #F1F3F7;"' + isSel + '>' + label + '</option>';
+        }).join('');
+
+        // Build account options for current seller
+        const curAccountIndex = (cat.accountIndex !== undefined && cat.accountIndex !== null) ? String(cat.accountIndex) : 'all';
+        let accountOptions = '<option value="all" style="background-color: #13151B; color: #F1F3F7;"' + (curAccountIndex === 'all' ? ' selected' : '') + '>📌 Tất cả STK của seller</option>';
+        if (curSeller.accounts && curSeller.accounts.length > 0) {
+          curSeller.accounts.forEach(function(acc, aIdx) {
+            const accLabel = '[' + (acc.bank || 'Bank') + '] ' + (acc.account || 'STK') + (acc.owner ? ' - ' + acc.owner : '');
+            const isSel = (curAccountIndex === String(aIdx)) ? ' selected' : '';
+            accountOptions += '<option value="' + aIdx + '" style="background-color: #13151B; color: #F1F3F7;"' + isSel + '>' + accLabel + '</option>';
+          });
+        }
+
+        // Build handlers chips (multiple handlers allowed)
+        const curHandlers = Array.isArray(cat.handlers)
+          ? [...cat.handlers]
+          : (cat.seller && cat.seller !== 'shop_common' ? [cat.seller] : []);
+
+        const realSellers = sellerEntries.filter(s => s[0] !== 'shop_common');
+        let handlerChips = '';
+        realSellers.forEach(function(sPair) {
+          const sKey = sPair[0];
+          const sVal = sPair[1];
+          const dId = sVal.discordId || sKey;
+          const isChecked = curHandlers.includes(sKey) || curHandlers.includes(dId);
+          const uName = sVal.username ? '@' + sVal.username : (sVal.name || sKey);
+          const avatarImg = sVal.avatar
+            ? '<img src="' + sVal.avatar + '" class="w-4 h-4 rounded-full object-cover shrink-0">'
+            : '<div class="w-4 h-4 rounded-full bg-brand-500/40 text-[9px] flex items-center justify-center font-bold text-white">@</div>';
+
+          handlerChips += '<button type="button" onclick="toggleCategoryHandler(\'' + key + '\', \'' + sKey + '\')" class="px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer active:scale-95 ' +
+            (isChecked
+              ? 'bg-brand-500/20 text-brand-300 border border-brand-500/50 shadow-sm ring-1 ring-brand-500/30 font-bold'
+              : 'bg-[#0E1015] text-gray-400 border border-white/10 hover:border-white/25 hover:text-white') + '">' +
+            avatarImg +
+            '<span>' + uName + '</span>' +
+            (isChecked
+              ? '<i class="fa-solid fa-circle-check text-brand-400 text-[11px] ml-0.5"></i>'
+              : '<i class="fa-regular fa-circle text-gray-500 text-[10px] ml-0.5"></i>') +
+          '</button>';
+        });
+
+        // Custom IDs that are not in realSellers
+        const customIds = curHandlers.filter(h => !realSellers.some(s => s[0] === h || s[1].discordId === h));
+        customIds.forEach(function(cId) {
+          handlerChips += '<span class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1.5">' +
+            '<i class="fa-solid fa-user-tag text-[10px]"></i> ID: ' + (cId.length > 8 ? cId.slice(0, 4) + '...' + cId.slice(-4) : cId) +
+            '<button type="button" onclick="removeCategoryHandler(\'' + key + '\', \'' + cId + '\')" class="text-gray-400 hover:text-rose-400 ml-1" title="Xóa">' +
+              '<i class="fa-solid fa-xmark text-[10px]"></i>' +
+            '</button>' +
+          '</span>';
+        });
+
+        let handlerSummary = '';
+        if (curHandlers.length === 0) {
+          handlerSummary = '<div class="text-[11px] text-amber-400/90 flex items-center gap-1.5"><i class="fa-solid fa-triangle-exclamation text-[10px] shrink-0"></i> <span>Chưa gán người phụ trách (Khi khách mở ticket, bot sẽ chỉ ping Staff và dùng STK Chung shop).</span></div>';
+        } else if (curHandlers.length === 1) {
+          handlerSummary = '<div class="text-[11px] text-emerald-400/90 flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-[10px] shrink-0"></i> <span>Đã gán <strong>1 người phụ trách</strong> — bot sẽ cấp quyền và ping vào ticket.</span></div>';
+        } else {
+          handlerSummary = '<div class="text-[11px] text-brand-300 font-medium flex items-center gap-1.5"><i class="fa-solid fa-users text-[10px] shrink-0"></i> <span>Đã gán <strong>' + curHandlers.length + ' người phụ trách</strong> — bot sẽ cấp quyền & <strong>ping đồng thời cả ' + curHandlers.length + ' người</strong> khi có ticket!</span></div>';
+        }
+
+        // Header badges for collapsed summary
+        const itemsCount = (cat.items || []).length;
+        let handlerHeaderBadge = '';
+        if (curHandlers.length === 1) {
+          const sObj = storeData.sellers?.[curHandlers[0]];
+          const uName = sObj?.username ? '@' + sObj.username : (sObj?.name || '1 người');
+          handlerHeaderBadge = '<span class="text-[10px] px-2 py-0.5 rounded bg-brand-500/15 text-brand-300 border border-brand-500/25 font-medium hidden md:inline-flex items-center gap-1"><i class="fa-solid fa-user-tag text-[9px]"></i>' + uName + '</span>';
+        } else if (curHandlers.length > 1) {
+          handlerHeaderBadge = '<span class="text-[10px] px-2 py-0.5 rounded bg-brand-500/20 text-brand-300 border border-brand-500/40 font-bold hidden md:inline-flex items-center gap-1"><i class="fa-solid fa-users text-[9px]"></i>' + curHandlers.length + ' phụ trách</span>';
+        } else {
+          handlerHeaderBadge = '<span class="text-[10px] px-2 py-0.5 rounded bg-white/[0.04] text-gray-400 border border-white/10 font-medium hidden md:inline-flex items-center gap-1"><i class="fa-solid fa-building text-[9px]"></i>STK Shop</span>';
+        }
+
+        // Build items inputs
+        let itemsRows = (cat.items || []).map(function(item, idx) {
+          return '<div class="flex items-center gap-2 group">' +
+            '<span class="text-[10px] text-gray-500 font-mono w-6 text-center font-bold">#' + (idx+1) + '</span>' +
+            '<input type="text" value="' + item + '" onfocus="selectProductForPreview(\'' + key + '\')" oninput="updateCategoryItem(\'' + key + '\', ' + idx + ', this.value)" class="input-field flex-1 py-1.5 text-xs font-semibold" placeholder="VD: 1 tháng | 99.000 VNĐ">' +
+            '<button onclick="deleteCategoryItem(\'' + key + '\', ' + idx + ')" title="Xóa gói này" class="text-gray-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 text-xs transition">' +
+              '<i class="fa-solid fa-trash-can"></i>' +
+            '</button>' +
+          '</div>';
+        }).join('');
+
+        const catColorHex = colorToHex(cat.color);
+
+        card.innerHTML = 
+          '<!-- Accordion Header: Click to Expand / Collapse -->' +
+          '<div onclick="toggleCardCollapse(\'' + key + '\', event)" class="p-3.5 sm:p-4 flex items-center justify-between gap-3 cursor-pointer hover:bg-white/[0.03] transition select-none ' + (isSelected ? 'bg-brand-500/[0.03]' : '') + '">' +
+            '<div class="flex items-center gap-2.5 min-w-0">' +
+              '<span class="text-xl shrink-0 w-7 h-7 flex items-center justify-center">' + renderEmojiHtml(cat.emoji, 'w-6 h-6') + '</span>' +
+              '<div class="min-w-0 flex items-center gap-2 flex-wrap">' +
+                '<span class="font-extrabold text-white text-sm truncate">' + (cat.label || key) + '</span>' +
+                '<span class="text-[10px] font-mono text-brand-300 bg-brand-500/15 border border-brand-500/30 px-1.5 py-0.5 rounded font-bold">' + key + '</span>' +
+                '<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-medium whitespace-nowrap"><i class="fa-solid fa-tags text-[9px] mr-1"></i>' + itemsCount + ' gói</span>' +
+                handlerHeaderBadge +
+              '</div>' +
+            '</div>' +
+            '<div class="flex items-center gap-2 shrink-0">' +
+              '<div id="productActiveBadge_' + key + '">' +
+                (isSelected
+                  ? '<span class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-brand-500/20 text-brand-300 border border-brand-500/30 flex items-center gap-1.5"><i class="fa-solid fa-eye text-[9px]"></i> Đang xem</span>'
+                  : '<button type="button" onclick="event.stopPropagation(); selectProductForPreview(\'' + key + '\')" class="px-2 py-0.5 rounded text-[10px] font-semibold text-gray-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.07] transition flex items-center gap-1"><i class="fa-regular fa-eye text-[9px]"></i> Xem trước</button>') +
+              '</div>' +
+              '<button type="button" onclick="event.stopPropagation(); deleteCategory(\'' + key + '\')" title="Xóa mặt hàng này" class="text-gray-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 text-xs transition">' +
+                '<i class="fa-solid fa-trash-can"></i>' +
+              '</button>' +
+              '<div class="w-7 h-7 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-gray-300 hover:text-white transition shrink-0" title="' + (isExpanded ? 'Thu gọn' : 'Mở rộng') + '">' +
+                '<i class="fa-solid fa-chevron-down text-xs transition-transform duration-200 ' + (isExpanded ? 'rotate-180 text-brand-400' : '') + '"></i>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+
+          '<!-- Accordion Body: Form Inputs (Expanded / Collapsed) -->' +
+          '<div id="productBody_' + key + '" class="' + (isExpanded ? 'block' : 'hidden') + ' border-t border-white/[0.07] p-4 sm:p-5 space-y-4 bg-black/10">' +
+            '<!-- Row 1: Icon Vuông + Tên Mặt Hàng VI + Mã ID (Key) -->' +
+            '<div class="flex flex-wrap sm:flex-nowrap items-start gap-2.5">' +
+              '<div class="shrink-0">' +
+                '<label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Icon</label>' +
+                '<div class="relative">' +
+                  '<button type="button" onclick="openEmojiPicker(event, \'' + key + '\')" id="catEmojiBtn_' + key + '" class="w-10 h-10 rounded-xl bg-[#0B0D12] hover:bg-brand-500/10 border border-white/10 hover:border-brand-500/60 flex items-center justify-center text-xl transition active:scale-95 shadow-inner cursor-pointer group" title="Bấm để chọn icon nổi bật nhanh hoặc gõ emoji">' +
+                    '<span id="catEmojiDisplay_' + key + '" class="transition-transform group-hover:scale-110 flex items-center justify-center w-full h-full select-none">' + renderEmojiHtml(cat.emoji, 'w-6 h-6') + '</span>' +
+                  '</button>' +
+                '</div>' +
+              '</div>' +
+              '<div class="flex-1 min-w-[150px]">' +
+                '<label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Tên Mặt Hàng (VI)</label>' +
+                '<input type="text" value="' + (cat.label || '') + '" onfocus="selectProductForPreview(\'' + key + '\')" oninput="onCategoryFieldInput(\'' + key + '\', \'label\', this.value)" class="input-field w-full font-bold text-xs h-10" placeholder="Tên danh mục">' +
+              '</div>' +
+              '<div class="w-full sm:w-36 shrink-0">' +
+                '<label class="text-[10px] font-bold text-brand-400 uppercase tracking-wider block mb-1">Mã ID (Key)</label>' +
+                '<input type="text" value="' + key + '" onfocus="selectProductForPreview(\'' + key + '\')" onchange="updateCategoryKey(\'' + key + '\', this.value)" class="input-field w-full font-mono text-xs font-bold text-brand-300 bg-[#08090C] border-brand-500/30 h-10" placeholder="id" title="Sửa mã ID sản phẩm">' +
+              '</div>' +
+            '</div>' +
+
+            '<!-- Row 2: Tên EN & Màu Viền Embed -->' +
+            '<div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">' +
+              '<div class="sm:col-span-7 min-w-0">' +
+                '<label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Tên Tiếng Anh (EN)</label>' +
+                '<input type="text" value="' + (cat.labelEn || '') + '" onfocus="selectProductForPreview(\'' + key + '\')" oninput="onCategoryFieldInput(\'' + key + '\', \'labelEn\', this.value)" class="input-field w-full py-1 text-xs text-sky-300" placeholder="English label (VD: Discord Nitro)">' +
+              '</div>' +
+              '<div class="sm:col-span-5 min-w-0">' +
+                '<label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Màu Viền Embed</label>' +
+                '<div class="flex items-center gap-2 min-w-0">' +
+                  '<input type="color" id="catColorPicker_' + key + '" value="' + catColorHex + '" onfocus="selectProductForPreview(\'' + key + '\')" oninput="onCategoryColorInput(\'' + key + '\', this.value)" class="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0 p-0 shrink-0">' +
+                  '<input type="text" id="catColorHex_' + key + '" value="' + catColorHex + '" onfocus="selectProductForPreview(\'' + key + '\')" oninput="onCategoryColorHexInput(\'' + key + '\', this.value)" class="input-field w-24 min-w-0 text-xs font-mono uppercase" placeholder="#5865F2">' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+
+            '<!-- Row 3: Người Phụ Trách & Ping Ticket (Chọn từ 1 hoặc nhiều người) -->' +
+            '<div class="app-card-nested p-3.5 border border-white/[0.06] rounded-xl space-y-2.5">' +
+              '<div class="flex flex-wrap items-center justify-between gap-2">' +
+                '<div class="flex items-center gap-2">' +
+                  '<span class="text-[10px] font-bold uppercase tracking-wider text-white flex items-center gap-1.5">' +
+                    '<i class="fa-solid fa-users text-brand-400"></i> Người Phụ Trách & Ping Ticket' +
+                  '</span>' +
+                  '<span class="text-[10px] text-gray-400">(Có thể chọn 2 người trở lên)</span>' +
+                '</div>' +
+                '<button type="button" onclick="promptAddCustomHandler(\'' + key + '\')" class="text-[10px] text-brand-400 hover:text-brand-300 font-semibold flex items-center gap-1 transition">' +
+                  '<i class="fa-solid fa-user-plus text-[9px]"></i> + Thêm Discord ID khác' +
+                '</button>' +
+              '</div>' +
+              '<div class="flex flex-wrap items-center gap-2">' +
+                (handlerChips || '<span class="text-xs text-gray-500 italic">Chưa có người bán nào trong Tab 1. Hãy qua Tab "Người Bán" thêm người bán trước.</span>') +
+              '</div>' +
+              '<div class="pt-1 border-t border-white/[0.04]">' +
+                handlerSummary +
+              '</div>' +
+            '</div>' +
+
+            '<!-- Row 3.5: Tài Khoản / STK Nhận Tiền Mặc Định -->' +
+            '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">' +
+              '<div class="min-w-0">' +
+                '<label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">' +
+                  '<i class="fa-solid fa-building-columns mr-1 text-emerald-400"></i> Người Bán Lấy STK Nhận Tiền' +
+                '</label>' +
+                '<select onfocus="selectProductForPreview(\'' + key + '\')" onchange="onCategorySellerChange(\'' + key + '\', this.value)" class="input-field w-full text-xs font-semibold text-brand-300 truncate">' +
+                  sellerOptions +
+                '</select>' +
+              '</div>' +
+              '<div class="min-w-0">' +
+                '<label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">' +
+                  '<i class="fa-solid fa-credit-card mr-1 text-emerald-400"></i> Chọn STK Nhận Tiền' +
+                '</label>' +
+                '<select onfocus="selectProductForPreview(\'' + key + '\')" onchange="onCategoryFieldInput(\'' + key + '\', \'accountIndex\', this.value)" class="input-field w-full text-xs font-semibold text-emerald-400 truncate">' +
+                  accountOptions +
+                '</select>' +
+              '</div>' +
+            '</div>' +
+
+            '<!-- Row 4: Tiêu Đề Embed & Phụ Đề Đậm -->' +
+            '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">' +
+              '<div>' +
+                '<label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Tiêu Đề Embed (Title)</label>' +
+                '<input type="text" value="' + (cat.title || '') + '" onfocus="selectProductForPreview(\'' + key + '\')" oninput="onCategoryFieldInput(\'' + key + '\', \'title\', this.value)" class="input-field w-full text-xs" placeholder="Bảng Giá ' + (cat.label || '') + '">' +
+              '</div>' +
+              '<div>' +
+                '<label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Dòng Phụ Đề Đậm (Subtitle)</label>' +
+                '<input type="text" value="' + (cat.subtitle || '') + '" onfocus="selectProductForPreview(\'' + key + '\')" oninput="onCategoryFieldInput(\'' + key + '\', \'subtitle\', this.value)" class="input-field w-full text-xs font-semibold uppercase text-amber-300" placeholder="' + (cat.label ? cat.label.toUpperCase() + ' CHÍNH HÃNG:' : 'CHÍNH HÃNG:') + '">' +
+              '</div>' +
+            '</div>' +
+
+            '<!-- Row 5: Link Ảnh Banner -->' +
+            '<div class="space-y-1">' +
+              '<div class="flex items-center justify-between">' +
+                '<label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Link Ảnh Banner Sản Phẩm (Banner URL)</label>' +
+                '<button type="button" onclick="clearCategoryBanner(\'' + key + '\')" class="text-[10px] text-rose-400 hover:underline">Xóa ảnh</button>' +
+              '</div>' +
+              '<input type="text" id="catBannerInput_' + key + '" value="' + (cat.bannerUrl || '') + '" onfocus="selectProductForPreview(\'' + key + '\')" oninput="onCategoryFieldInput(\'' + key + '\', \'bannerUrl\', this.value)" class="input-field w-full py-1 text-xs" placeholder="https://... (để trống nếu không dùng banner)">' +
+            '</div>' +
+
+            '<!-- Row 6: Danh Sách Các Gói & Bảng Giá -->' +
+            '<div class="app-card-nested p-3.5 border border-white/[0.06] space-y-2.5">' +
+              '<div class="flex items-center justify-between">' +
+                '<span class="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">' +
+                  '<i class="fa-solid fa-tags text-emerald-400 text-[11px]"></i> Danh Sách Các Gói & Bảng Giá (' + (cat.items || []).length + ' gói):' +
+                '</span>' +
+                '<button onclick="addCategoryItem(\'' + key + '\')" class="text-xs text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1">' +
+                  '<i class="fa-solid fa-plus text-[10px]"></i> Thêm Gói Mới' +
+                '</button>' +
+              '</div>' +
+              '<div class="space-y-2" id="catItemsContainer_' + key + '">' +
+                (itemsRows || '<p class="text-xs text-gray-500 italic text-center p-2">Chưa có gói nào. Hãy bấm "Thêm Gói Mới"</p>') +
+              '</div>' +
+            '</div>' +
+          '</div>';
+
+        container.appendChild(card);
+      });
+      updateProductTabPreview();
+    }
+    function toggleCategoryHandler(catKey, sellerKey) {
+      if (!storeData.categories[catKey]) return;
+      const cat = storeData.categories[catKey];
+      if (!Array.isArray(cat.handlers)) {
+        cat.handlers = (cat.seller && cat.seller !== 'shop_common') ? [cat.seller] : [];
+      }
+
+      const sellerObj = storeData.sellers?.[sellerKey];
+      const dId = sellerObj?.discordId || sellerKey;
+
+      const idx = cat.handlers.findIndex(h => h === sellerKey || h === dId);
+      if (idx >= 0) {
+        cat.handlers.splice(idx, 1);
+      } else {
+        cat.handlers.push(sellerKey);
+      }
+
+      selectedProductKey = catKey;
+      renderProducts();
+      updateProductTabPreview();
+      highlightSelectedCard(catKey);
+    }
+
+    function removeCategoryHandler(catKey, handlerId) {
+      if (!storeData.categories[catKey]) return;
+      const cat = storeData.categories[catKey];
+      if (!Array.isArray(cat.handlers)) return;
+      cat.handlers = cat.handlers.filter(h => h !== handlerId);
+      selectedProductKey = catKey;
+      renderProducts();
+      updateProductTabPreview();
+      highlightSelectedCard(catKey);
+    }
+
+    function promptAddCustomHandler(catKey) {
+      const id = prompt('Nhập Discord ID của người phụ trách/kỹ thuật cần ping khi mở ticket:');
+      if (!id) return;
+      const cleanId = id.trim().replace(/[^0-9]/g, '');
+      if (cleanId.length < 17 || cleanId.length > 20) {
+        alert('Discord ID không hợp lệ! ID thường là dãy 17-20 chữ số (VD: 895890393806274570).');
+        return;
+      }
+      if (!storeData.categories[catKey]) return;
+      const cat = storeData.categories[catKey];
+      if (!Array.isArray(cat.handlers)) {
+        cat.handlers = (cat.seller && cat.seller !== 'shop_common') ? [cat.seller] : [];
+      }
+      if (!cat.handlers.includes(cleanId)) {
+        cat.handlers.push(cleanId);
+        selectedProductKey = catKey;
+        renderProducts();
+        updateProductTabPreview();
+        highlightSelectedCard(catKey);
+        showToast('Đã thêm Discord ID ' + cleanId + ' vào người phụ trách!');
+      } else {
+        alert('ID này đã có trong danh sách phụ trách của mặt hàng này!');
+      }
+    }
+
+    function onCategorySellerChange(key, sellerKey) {
+      if (storeData.categories[key]) {
+        storeData.categories[key].seller = sellerKey;
+        storeData.categories[key].accountIndex = 'all';
+        renderProducts();
+      }
+    }
+
+    function updateCategory(key, field, val) {
+      if (storeData.categories[key]) {
+        storeData.categories[key][field] = val;
+        selectedProductKey = key;
+        updateProductTabPreview();
+      }
+    }
+
+    function updateCategoryItem(key, idx, val) {
+      if (storeData.categories[key] && storeData.categories[key].items) {
+        storeData.categories[key].items[idx] = val;
+        selectedProductKey = key;
+        updateProductTabPreview();
+      }
+    }
+
+    function addCategoryItem(key) {
+      if (!storeData.categories[key].items) storeData.categories[key].items = [];
+      storeData.categories[key].items.push('Gói mới | 100.000 VNĐ');
+      selectedProductKey = key;
+      renderProducts();
+    }
+
+    function deleteCategoryItem(key, idx) {
+      if (storeData.categories[key] && storeData.categories[key].items) {
+        storeData.categories[key].items.splice(idx, 1);
+        selectedProductKey = key;
+        renderProducts();
+      }
+    }
+
+    function deleteCategory(key) {
+      if (confirm('Bạn có chắc muốn xóa mặt hàng "' + (storeData.categories[key]?.label || key) + '"?')) {
+        delete storeData.categories[key];
+        if (selectedProductKey === key) {
+          selectedProductKey = Object.keys(storeData.categories || {})[0] || null;
+        }
+        renderProducts();
+      }
+    }
+
+    function openAddProductModal() {
+      const name = prompt('Nhập tên mặt hàng mới (VD: Canva Pro, ChatGPT Plus):');
+      if (!name) return;
+      const key = 'item_' + Date.now().toString().slice(-5);
+      const defaultSellerKey = storeData.sellers?.['shop_common'] ? 'shop_common' : (Object.keys(storeData.sellers || {})[0] || '');
+      storeData.categories[key] = {
+        label: name,
+        emoji: '📦',
+        title: 'Bảng Giá ' + name,
+        subtitle: name.toUpperCase() + ' CHÍNH HÃNG:',
+        seller: defaultSellerKey,
+        handlers: (defaultSellerKey && defaultSellerKey !== 'shop_common') ? [defaultSellerKey] : [],
+        accountIndex: 'all',
+        bannerUrl: '',
+        color: 0x5865F2,
+        items: [
+          '1 Tháng | 50.000 VNĐ',
+          '1 Năm | 350.000 VNĐ'
+        ]
+      };
+      selectedProductKey = key;
+      expandedCardKeys[key] = true;
+      renderProducts();
+      showToast('Đã thêm mặt hàng: ' + name);
+    }
+
+    // ==========================================
+    // TAB 3: SETTINGS & MENU EMBED
+    // ==========================================
+    let editingLang = 'vi';
+    let previewLang = 'vi';
+
+    function initMenuEmbedData() {
+      if (!storeData.menuEmbed) storeData.menuEmbed = {};
+      if (!storeData.defaultLanguage) storeData.defaultLanguage = 'vi';
+      if (!storeData.menuEmbed.vi) {
+        storeData.menuEmbed.vi = {
+          title: 'BẢNG GIÁ CÁC MẶT HÀNG TẠI {storeName}',
+          line1: '• Xem Giá Sản Phẩm Bên Dưới Nhé !',
+          line2: '• Khi chọn được mặt hàng ưng ý, bạn có thể tạo Ticket để mua hàng tại {ticket}',
+          paymentTitle: '╰─ PHƯƠNG THỨC THANH TOÁN',
+          paymentMethods: storeData.paymentMethods || 'Bank, Card, MoMo, Tsr, LTC',
+          footerNote: 'Bảng giá không cố định, có thể thay đổi theo thời gian',
+          placeholder: 'Đưa ra lựa chọn'
+        };
+      }
+      if (!storeData.menuEmbed.en) {
+        storeData.menuEmbed.en = {
+          title: 'PRICE LIST AT {storeName}',
+          line1: '• Check out product prices below!',
+          line2: '• Once you find your desired item, create a ticket at {ticket}',
+          paymentTitle: '╰─ PAYMENT METHODS',
+          paymentMethods: storeData.paymentMethods || 'Bank Transfer, Crypto (LTC/USDT), Card',
+          footerNote: 'Prices are not fixed and may change over time',
+          placeholder: 'Select a product to view...'
+        };
+      }
+      if (!storeData.menuEmbed.color) storeData.menuEmbed.color = '#2B2D31';
+    }
+
+    function switchEditLang(lang) {
+      saveCurrentEditLangFields();
+      editingLang = lang;
+      document.getElementById('tabEditVi').className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition ' + (lang === 'vi' ? 'bg-brand-500 text-white shadow-sm' : 'bg-[#15171F] text-gray-400 hover:text-white border border-white/[0.06]');
+      document.getElementById('tabEditEn').className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition ' + (lang === 'en' ? 'bg-brand-500 text-white shadow-sm' : 'bg-[#15171F] text-gray-400 hover:text-white border border-white/[0.06]');
+      document.getElementById('editLangLabel').innerText = lang === 'vi' ? 'Tiếng Việt' : 'English';
+      loadEditLangFields();
+      togglePreviewLang(lang);
+    }
+
+    function setDefaultLang(lang) {
+      storeData.defaultLanguage = lang;
+      updateDefaultLangButtons();
+      showToast('Đã đặt ngôn ngữ mặc định của bot: ' + (lang === 'vi' ? '🇻🇳 Tiếng Việt' : '🇬🇧 English'));
+    }
+
+    function updateDefaultLangButtons() {
+      const dLang = storeData.defaultLanguage || 'vi';
+      document.getElementById('btnDefLangVi').className = 'px-2.5 py-1 rounded-lg text-xs font-bold transition ' + (dLang === 'vi' ? 'bg-brand-500 text-white shadow-sm' : 'bg-transparent text-gray-400 hover:text-white');
+      document.getElementById('btnDefLangEn').className = 'px-2.5 py-1 rounded-lg text-xs font-bold transition ' + (dLang === 'en' ? 'bg-brand-500 text-white shadow-sm' : 'bg-transparent text-gray-400 hover:text-white');
+    }
+
+    function getLinesFromUI() {
+      const inputs = document.querySelectorAll('#menuLinesContainer .menu-line-input');
+      const lines = [];
+      inputs.forEach(inp => {
+        lines.push(inp.value);
+      });
+      return lines;
+    }
+
+    function renderMenuLinesUI(lines) {
+      const container = document.getElementById('menuLinesContainer');
+      if (!container) return;
+      container.innerHTML = '';
+      const list = (lines && Array.isArray(lines)) ? lines : [];
+      
+      const badge = document.getElementById('linesCountBadge');
+      if (badge) badge.innerText = `${list.length} dòng`;
+
+      list.forEach((lineText, idx) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2 group';
+        row.dataset.lineIndex = idx;
+
+        const lbl = document.createElement('span');
+        lbl.className = 'text-[11px] font-mono text-gray-400 w-16 shrink-0 font-bold';
+        lbl.innerText = `Dòng ${idx + 1}:`;
+
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.value = lineText;
+        inp.className = 'input-field flex-1 text-xs menu-line-input';
+        inp.placeholder = 'Nhập nội dung dòng (hỗ trợ {ticket}, {storeName})...';
+        inp.oninput = () => {
+          onMenuLineInputChange();
+        };
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'w-7 h-7 rounded-lg hover:bg-rose-500/20 text-gray-500 hover:text-rose-400 transition flex items-center justify-center text-xs shrink-0';
+        delBtn.title = 'Xóa dòng này';
+        delBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+        delBtn.onclick = () => {
+          removeMenuInstructionLine(idx);
+        };
+
+        row.appendChild(lbl);
+        row.appendChild(inp);
+        row.appendChild(delBtn);
+        container.appendChild(row);
+      });
+    }
+
+    function addMenuInstructionLine(defaultText = '• ') {
+      const currentLines = getLinesFromUI();
+      currentLines.push(defaultText);
+      saveCurrentEditLangFields(currentLines);
+      renderMenuLinesUI(currentLines);
+      updateLivePreview();
+    }
+
+    function removeMenuInstructionLine(idx) {
+      const currentLines = getLinesFromUI();
+      currentLines.splice(idx, 1);
+      saveCurrentEditLangFields(currentLines);
+      renderMenuLinesUI(currentLines);
+      updateLivePreview();
+    }
+
+    function onMenuLineInputChange() {
+      const lines = getLinesFromUI();
+      saveCurrentEditLangFields(lines);
+      updateLivePreview();
+    }
+
+    function saveCurrentEditLangFields(explicitLines = null) {
+      initMenuEmbedData();
+      const c = storeData.menuEmbed[editingLang] || {};
+      const elTitle = document.getElementById('inputMenuTitle');
+      if (elTitle) c.title = elTitle.value;
+
+      const lines = explicitLines !== null ? explicitLines : getLinesFromUI();
+      c.lines = lines;
+      c.line1 = lines[0] || '';
+      c.line2 = lines[1] || '';
+
+      const elPayT = document.getElementById('inputMenuPaymentTitle');
+      if (elPayT) c.paymentTitle = elPayT.value;
+      const elPayM = document.getElementById('inputMenuPaymentMethods');
+      if (elPayM) c.paymentMethods = elPayM.value;
+      const elFoot = document.getElementById('inputMenuFooterNote');
+      if (elFoot) c.footerNote = elFoot.value;
+      const elHold = document.getElementById('inputMenuPlaceholder');
+      if (elHold) c.placeholder = elHold.value;
+      storeData.menuEmbed[editingLang] = c;
+    }
+
+    function loadEditLangFields() {
+      initMenuEmbedData();
+      const c = storeData.menuEmbed[editingLang] || {};
+      const elTitle = document.getElementById('inputMenuTitle');
+      if (elTitle) elTitle.value = c.title || '';
+
+      let lines = Array.isArray(c.lines) ? [...c.lines] : [c.line1, c.line2].filter(Boolean);
+      if (lines.length === 0) {
+        if (editingLang === 'en') {
+          lines = [
+            '• Check out product prices below!',
+            '• Once you find your desired item, create a ticket at {ticket}'
+          ];
+        } else {
+          lines = [
+            '• Xem Giá Sản Phẩm Bên Dưới Nhé !',
+            '• Khi chọn được mặt hàng ưng ý, bạn có thể tạo Ticket để mua hàng tại {ticket}'
+          ];
+        }
+      }
+      c.lines = lines;
+      c.line1 = lines[0] || '';
+      c.line2 = lines[1] || '';
+      renderMenuLinesUI(lines);
+
+      const elPayT = document.getElementById('inputMenuPaymentTitle');
+      if (elPayT) elPayT.value = c.paymentTitle || '';
+      const elPayM = document.getElementById('inputMenuPaymentMethods');
+      if (elPayM) elPayM.value = c.paymentMethods || '';
+      const elFoot = document.getElementById('inputMenuFooterNote');
+      if (elFoot) elFoot.value = c.footerNote || '';
+      const elHold = document.getElementById('inputMenuPlaceholder');
+      if (elHold) elHold.value = c.placeholder || '';
+
+      const elStoreName = document.getElementById('inputStoreName');
+      if (elStoreName) elStoreName.value = storeData.storeName || '4AM STORE';
+      const elColor = document.getElementById('inputMenuColor');
+      if (elColor) elColor.value = storeData.menuEmbed.color || '#2B2D31';
+      const elColorHex = document.getElementById('inputMenuColorHex');
+      if (elColorHex) elColorHex.value = storeData.menuEmbed.color || '#2B2D31';
+      const elBanner = document.getElementById('inputMainBannerUrl');
+      if (elBanner) elBanner.value = storeData.menuEmbed.bannerUrl !== undefined ? storeData.menuEmbed.bannerUrl : (storeData.mainBannerUrl || '');
+      const elLogo = document.getElementById('inputLogoUrl');
+      if (elLogo) elLogo.value = storeData.menuEmbed.logoUrl !== undefined ? storeData.menuEmbed.logoUrl : (storeData.logoUrl || '');
+      const elTicket = document.getElementById('inputTicketChannelId');
+      if (elTicket) elTicket.value = storeData.ticketChannelId || '';
+
+      updateDefaultLangButtons();
+    }
+
+    function togglePreviewLang(lang) {
+      previewLang = lang;
+      const viActive = lang === 'vi';
+      
+      const bVi = document.getElementById('btnPrevLangVi');
+      if (bVi) bVi.className = 'px-2.5 py-0.5 rounded text-[11px] font-bold transition ' + (viActive ? 'bg-brand-500 text-white' : 'bg-transparent text-gray-400 hover:text-white');
+      const bEn = document.getElementById('btnPrevLangEn');
+      if (bEn) bEn.className = 'px-2.5 py-0.5 rounded text-[11px] font-bold transition ' + (!viActive ? 'bg-brand-500 text-white' : 'bg-transparent text-gray-400 hover:text-white');
+
+      const pVi = document.getElementById('prevBtnVi');
+      if (pVi) pVi.className = 'px-3 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition ' + (viActive ? 'bg-brand-500 text-white' : 'bg-[#4E5058] text-white hover:bg-[#6D6F78]');
+      const pEn = document.getElementById('prevBtnEn');
+      if (pEn) pEn.className = 'px-3 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition ' + (!viActive ? 'bg-brand-500 text-white' : 'bg-[#4E5058] text-white hover:bg-[#6D6F78]');
+
+      updateLivePreview();
+    }
+
+    function updateLivePreview() {
+      initMenuEmbedData();
+      saveCurrentEditLangFields();
+
+      const c = storeData.menuEmbed[previewLang] || storeData.menuEmbed['vi'] || {};
+      const sName = storeData.storeName || '4AM STORE';
+      const tChannel = storeData.ticketChannelId ? '#『🎟』ticket' : '#ticket';
+
+      const title = (c.title || 'BẢNG GIÁ CÁC MẶT HÀNG TẠI {storeName}').replace(/\{storeName\}/g, sName);
+
+      const linesContainer = document.getElementById('prevLinesContainer');
+      if (linesContainer) {
+        linesContainer.innerHTML = '';
+        const linesToRender = Array.isArray(c.lines)
+          ? c.lines
+          : [c.line1, c.line2].filter(Boolean);
+
+        if (linesToRender.length === 0) {
+          linesContainer.innerHTML = '<p class="text-gray-500 italic text-[11px]">• (Chưa có dòng hướng dẫn nào)</p>';
+        } else {
+          linesToRender.forEach(rawLine => {
+            if (!rawLine || !rawLine.trim()) return;
+            const formatted = rawLine
+              .replace(/\{ticket\}/g, '<span class="text-brand-400 font-semibold bg-brand-500/10 px-1 rounded">' + tChannel + '</span>')
+              .replace(/\{storeName\}/g, sName);
+            const p = document.createElement('p');
+            p.className = 'leading-relaxed';
+            p.innerHTML = formatted;
+            linesContainer.appendChild(p);
+          });
+        }
+      }
+
+      const payTitle = c.paymentTitle || '╰─ PHƯƠNG THỨC THANH TOÁN';
+      const payMethods = c.paymentMethods || 'Bank, Card, MoMo, Tsr, LTC';
+      const footNote = c.footerNote || 'Bảng giá không cố định, có thể thay đổi theo thời gian';
+      const placeholder = c.placeholder || (previewLang === 'en' ? 'Select a product to view...' : 'Đưa ra lựa chọn');
+
+      const elTitle = document.getElementById('prevTitle');
+      if (elTitle) elTitle.innerText = title;
+      const elPayT = document.getElementById('prevPaymentTitle');
+      if (elPayT) elPayT.innerText = payTitle;
+      const elPayM = document.getElementById('prevPayment');
+      if (elPayM) elPayM.innerText = payMethods;
+      const elFoot = document.getElementById('prevFooterNote');
+      if (elFoot) elFoot.innerText = footNote;
+      const elHold = document.getElementById('prevPlaceholder');
+      if (elHold) elHold.innerText = placeholder;
+
+      const color = storeData.menuEmbed.color || '#2B2D31';
+      const elBox = document.getElementById('prevEmbedBox');
+      if (elBox) elBox.style.borderColor = color;
+
+      const logoUrl = storeData.menuEmbed.logoUrl !== undefined ? storeData.menuEmbed.logoUrl : storeData.logoUrl;
+      const prevLogo = document.getElementById('prevLogo');
+      if (prevLogo) {
+        if (logoUrl && logoUrl.trim()) {
+          prevLogo.src = logoUrl.trim();
+          prevLogo.classList.remove('hidden');
+        } else {
+          prevLogo.classList.add('hidden');
+        }
+      }
+
+      const bannerUrl = storeData.menuEmbed.bannerUrl !== undefined ? storeData.menuEmbed.bannerUrl : storeData.mainBannerUrl;
+      const prevBanner = document.getElementById('prevBanner');
+      if (prevBanner) {
+        if (bannerUrl && bannerUrl.trim()) {
+          prevBanner.src = bannerUrl.trim();
+          prevBanner.classList.remove('hidden');
+        } else {
+          prevBanner.classList.add('hidden');
+        }
+      }
+    }
+
+    function updatePreview() {
+      updateLivePreview();
+    }
+
+    function clearMenuBanner() {
+      const el = document.getElementById('inputMainBannerUrl');
+      if (el) el.value = '';
+      if (storeData.menuEmbed) storeData.menuEmbed.bannerUrl = '';
+      storeData.mainBannerUrl = '';
+      updateLivePreview();
+      showToast('Đã xóa link ảnh banner.');
+    }
+
+    function onColorPickerChange(val) {
+      const el = document.getElementById('inputMenuColorHex');
+      if (el) el.value = val;
+      if (storeData.menuEmbed) storeData.menuEmbed.color = val;
+      updateLivePreview();
+    }
+
+    function onColorHexChange(val) {
+      if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+        const el = document.getElementById('inputMenuColor');
+        if (el) el.value = val;
+        if (storeData.menuEmbed) storeData.menuEmbed.color = val;
+        updateLivePreview();
+      }
+    }
+
+    function onStoreNameChange(val) {
+      storeData.storeName = val;
+      document.getElementById('headerStoreName').innerText = val || '4AM STORE';
+      updateLivePreview();
+    }
+
+    function onMenuFormChange() {
+      saveCurrentEditLangFields();
+      if (storeData.menuEmbed) {
+        const bEl = document.getElementById('inputMainBannerUrl');
+        if (bEl) {
+          storeData.menuEmbed.bannerUrl = bEl.value;
+          storeData.mainBannerUrl = bEl.value;
+        }
+        const lEl = document.getElementById('inputLogoUrl');
+        if (lEl) {
+          storeData.menuEmbed.logoUrl = lEl.value;
+          storeData.logoUrl = lEl.value;
+        }
+      }
+      const tEl = document.getElementById('inputTicketChannelId');
+      if (tEl) storeData.ticketChannelId = tEl.value;
+      updateLivePreview();
+    }
+
+    function collectFormData() {
+      saveCurrentEditLangFields();
+      if (storeData.menuEmbed) {
+        const bEl = document.getElementById('inputMainBannerUrl');
+        if (bEl) {
+          storeData.menuEmbed.bannerUrl = bEl.value;
+          storeData.mainBannerUrl = bEl.value;
+        }
+        const lEl = document.getElementById('inputLogoUrl');
+        if (lEl) {
+          storeData.menuEmbed.logoUrl = lEl.value;
+          storeData.logoUrl = lEl.value;
+        }
+        const cEl = document.getElementById('inputMenuColorHex');
+        if (cEl) storeData.menuEmbed.color = cEl.value || '#2B2D31';
+      }
+      const sEl = document.getElementById('inputStoreName');
+      if (sEl) storeData.storeName = sEl.value;
+      const tEl = document.getElementById('inputTicketChannelId');
+      if (tEl) storeData.ticketChannelId = tEl.value;
+      if (storeData.menuEmbed && storeData.menuEmbed[editingLang]) {
+        storeData.paymentMethods = storeData.menuEmbed[editingLang].paymentMethods || storeData.paymentMethods;
+      }
+    }
+
+    async function saveConfig() {
+      collectFormData();
+      const btn = document.getElementById('btnSave');
+      const original = btn.innerHTML;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/save', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + authToken
+          },
+          body: JSON.stringify(storeData)
+        });
+        const json = await res.json();
+        if (json.ok) {
+          showToast('✅ Đã lưu cấu hình thành công!');
+        } else {
+          showToast(json.error || 'Lỗi khi lưu', true);
+        }
+      } catch (e) {
+        showToast('Lỗi kết nối máy chủ', true);
+      } finally {
+        btn.innerHTML = original;
+        btn.disabled = false;
+      }
+    }
+
+    async function saveAndSync() {
+      collectFormData();
+      const btn = document.getElementById('btnSync');
+      const original = btn.innerHTML;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang đồng bộ Discord...';
+      btn.disabled = true;
+
+      try {
+        const saveRes = await fetch('/api/save', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + authToken
+          },
+          body: JSON.stringify(storeData)
+        });
+        const saveJson = await saveRes.json();
+        if (!saveJson.ok) throw new Error(saveJson.error || 'Lỗi lưu');
+
+        const syncRes = await fetch('/api/sync', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + authToken
+          }
+        });
+        const syncJson = await syncRes.json();
+        if (syncJson.ok) {
+          showToast('🚀 Đã lưu và đồng bộ trực tiếp lên Discord!');
+        } else {
+          showToast(syncJson.error || 'Lỗi đồng bộ', true);
+        }
+      } catch (e) {
+        showToast(e.message || 'Lỗi kết nối', true);
+      } finally {
+        btn.innerHTML = original;
+        btn.disabled = false;
+      }
+    }
+
+    // ==========================================
+    // TAB 4: TICKET PANEL & SUPPORT CHANNELS
+    // ==========================================
+    let ticketEditLang = 'vi';
+    let ticketPrevLang = 'vi';
+
+    function initTicketPanelData() {
+      if (!storeData.ticketPanel) {
+        storeData.ticketPanel = {
+          color: '#5865F2',
+          thumbnailUrl: '',
+          bannerUrl: '',
+          channelNameVi: '『🎟』ticket-support',
+          channelNameEn: '『🎟』ticket-support-en',
+          ticketPrefix: 'ticket-support',
+          vi: {
+            title: '🎟️ TRUNG TÂM HỖ TRỢ & MUA HÀNG — {storeName}',
+            subtitle: 'Chào mừng bạn đến với hệ thống hỗ trợ của {storeName}!',
+            lines: [
+              '• Mua các dịch vụ **Discord Nitro, Boost Server, Spotify, Youtube, Netflix, VPS, Bot Hosting**...',
+              '• Hỗ trợ kỹ thuật, kiểm tra đơn hàng hoặc bảo hành.',
+              '👉 Bấm nút **"🎟️ Mở Ticket Hỗ Trợ"** bên dưới để tạo kênh chat riêng với Staff 24/7!'
+            ],
+            buttonLabel: '🎟️ Mở Ticket Hỗ Trợ',
+            welcomeTitle: '🎟️ TICKET HỖ TRỢ — {storeName}',
+            welcomeMsg: 'Xin chào <@{userId}>! Cảm ơn bạn đã liên hệ với **{storeName}**.',
+            welcomeNote: '💬 *Vui lòng gửi câu hỏi hoặc dịch vụ bạn muốn tư vấn tại kênh này nhé!*'
+          },
+          en: {
+            title: '🎟️ SUPPORT & ORDER CENTER — {storeName}',
+            subtitle: 'Welcome to **{storeName}** official support center!',
+            lines: [
+              '• Order services: **Discord Nitro, Server Boosts, Spotify, Netflix, VPS, Bot Hosting**...',
+              '• Technical support, order inquiries, or warranty.',
+              '👉 Click the **"🎟️ Open Support Ticket"** button below to start a private chat with our 24/7 staff!'
+            ],
+            buttonLabel: '🎟️ Open Support Ticket',
+            welcomeTitle: '🎟️ SUPPORT TICKET — {storeName}',
+            welcomeMsg: 'Hello <@{userId}>! Thank you for contacting **{storeName}**.',
+            welcomeNote: '💬 *Please send your inquiries or details of what you need assistance with!*'
+          }
+        };
+      }
+      if (!storeData.ticketPanel.vi) storeData.ticketPanel.vi = {};
+      if (!storeData.ticketPanel.en) storeData.ticketPanel.en = {};
+    }
+
+    function switchTicketEditLang(lang) {
+      saveTicketFormToData();
+      ticketEditLang = lang;
+      document.getElementById('tabTicketEditVi').className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition ' + (lang === 'vi' ? 'bg-amber-500 text-white shadow-sm' : 'bg-[#15171F] text-gray-400 hover:text-white border border-white/[0.06]');
+      document.getElementById('tabTicketEditEn').className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition ' + (lang === 'en' ? 'bg-amber-500 text-white shadow-sm' : 'bg-[#15171F] text-gray-400 hover:text-white border border-white/[0.06]');
+      document.getElementById('ticketEditLangLabel').innerText = lang === 'vi' ? 'Tiếng Việt' : 'English';
+      renderTicketForm();
+      toggleTicketPreviewLang(lang);
+    }
+
+    function toggleTicketPreviewLang(lang) {
+      ticketPrevLang = lang;
+      document.getElementById('btnTicketPrevLangVi').className = 'px-2.5 py-0.5 rounded text-[11px] font-bold transition ' + (lang === 'vi' ? 'bg-amber-500 text-white' : 'bg-transparent text-gray-400 hover:text-white');
+      document.getElementById('btnTicketPrevLangEn').className = 'px-2.5 py-0.5 rounded text-[11px] font-bold transition ' + (lang === 'en' ? 'bg-amber-500 text-white' : 'bg-transparent text-gray-400 hover:text-white');
+      renderTicketPreview();
+    }
+
+    function renderTicketForm() {
+      initTicketPanelData();
+      const tp = storeData.ticketPanel;
+      const langData = tp[ticketEditLang] || {};
+
+      // Channels
+      const inChanVi = document.getElementById('inputTicketChanVi');
+      if (inChanVi) inChanVi.value = tp.channelNameVi || '『🎟』ticket-support';
+      const inChanEn = document.getElementById('inputTicketChanEn');
+      if (inChanEn) inChanEn.value = tp.channelNameEn || '『🎟』ticket-support-en';
+      const inPrefix = document.getElementById('inputTicketPrefix');
+      if (inPrefix) inPrefix.value = tp.ticketPrefix || 'ticket-support';
+
+      // Lang fields
+      const inTitle = document.getElementById('inputTicketTitle');
+      if (inTitle) inTitle.value = langData.title || '';
+      const inSubtitle = document.getElementById('inputTicketSubtitle');
+      if (inSubtitle) inSubtitle.value = langData.subtitle || '';
+      const inBtnLabel = document.getElementById('inputTicketButtonLabel');
+      if (inBtnLabel) inBtnLabel.value = langData.buttonLabel || (ticketEditLang === 'en' ? '🎟️ Open Support Ticket' : '🎟️ Mở Ticket Hỗ Trợ');
+
+      // Color & media
+      const colorVal = tp.color || '#5865F2';
+      const inColor = document.getElementById('inputTicketColor');
+      if (inColor) inColor.value = colorVal;
+      const inColorHex = document.getElementById('inputTicketColorHex');
+      if (inColorHex) inColorHex.value = colorVal;
+
+      const inThumb = document.getElementById('inputTicketThumbnailUrl');
+      if (inThumb) inThumb.value = tp.thumbnailUrl || '';
+      const inBanner = document.getElementById('inputTicketBannerUrl');
+      if (inBanner) inBanner.value = tp.bannerUrl || '';
+
+      // Welcome fields
+      const inWelcomeTitle = document.getElementById('inputTicketWelcomeTitle');
+      if (inWelcomeTitle) inWelcomeTitle.value = langData.welcomeTitle || '';
+      const inWelcomeMsg = document.getElementById('inputTicketWelcomeMsg');
+      if (inWelcomeMsg) inWelcomeMsg.value = langData.welcomeMsg || '';
+      const inWelcomeNote = document.getElementById('inputTicketWelcomeNote');
+      if (inWelcomeNote) inWelcomeNote.value = langData.welcomeNote || '';
+
+      // Lines
+      renderTicketLinesUI(langData.lines || []);
+      renderTicketPreview();
+    }
+
+    function renderTicketLinesUI(lines) {
+      const container = document.getElementById('ticketLinesContainer');
+      if (!container) return;
+      container.innerHTML = '';
+      const list = Array.isArray(lines) ? lines : [];
+
+      const badge = document.getElementById('ticketLinesCountBadge');
+      if (badge) badge.innerText = `${list.length} dòng`;
+
+      list.forEach((lineText, idx) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2 group';
+
+        const lbl = document.createElement('span');
+        lbl.className = 'text-[11px] font-mono text-gray-400 w-16 shrink-0 font-bold';
+        lbl.innerText = `Dòng ${idx + 1}:`;
+
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.className = 'ticket-line-input input-field flex-1 text-xs';
+        inp.value = lineText;
+        inp.placeholder = 'Nhập nội dung dòng giới thiệu / hướng dẫn...';
+        inp.oninput = function() {
+          updateTicketInstructionLine(idx, this.value);
+        };
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 transition';
+        delBtn.innerHTML = '<i class="fa-solid fa-trash-can text-xs"></i>';
+        delBtn.title = 'Xóa dòng này';
+        delBtn.onclick = function() {
+          removeTicketInstructionLine(idx);
+        };
+
+        row.appendChild(lbl);
+        row.appendChild(inp);
+        row.appendChild(delBtn);
+        container.appendChild(row);
+      });
+    }
+
+    function addTicketInstructionLine() {
+      initTicketPanelData();
+      if (!storeData.ticketPanel[ticketEditLang].lines) {
+        storeData.ticketPanel[ticketEditLang].lines = [];
+      }
+      storeData.ticketPanel[ticketEditLang].lines.push('• ');
+      renderTicketForm();
+    }
+
+    function removeTicketInstructionLine(idx) {
+      initTicketPanelData();
+      if (storeData.ticketPanel[ticketEditLang]?.lines) {
+        storeData.ticketPanel[ticketEditLang].lines.splice(idx, 1);
+        renderTicketForm();
+      }
+    }
+
+    function updateTicketInstructionLine(idx, val) {
+      initTicketPanelData();
+      if (storeData.ticketPanel[ticketEditLang]?.lines) {
+        storeData.ticketPanel[ticketEditLang].lines[idx] = val;
+        renderTicketPreview();
+      }
+    }
+
+    function saveTicketFormToData() {
+      initTicketPanelData();
+      const tp = storeData.ticketPanel;
+      const langData = tp[ticketEditLang] || (tp[ticketEditLang] = {});
+
+      const inChanVi = document.getElementById('inputTicketChanVi');
+      if (inChanVi) tp.channelNameVi = inChanVi.value.trim();
+      const inChanEn = document.getElementById('inputTicketChanEn');
+      if (inChanEn) tp.channelNameEn = inChanEn.value.trim();
+      const inPrefix = document.getElementById('inputTicketPrefix');
+      if (inPrefix) tp.ticketPrefix = inPrefix.value.trim();
+
+      const inTitle = document.getElementById('inputTicketTitle');
+      if (inTitle) langData.title = inTitle.value;
+      const inSubtitle = document.getElementById('inputTicketSubtitle');
+      if (inSubtitle) langData.subtitle = inSubtitle.value;
+      const inBtnLabel = document.getElementById('inputTicketButtonLabel');
+      if (inBtnLabel) langData.buttonLabel = inBtnLabel.value;
+
+      const inColorHex = document.getElementById('inputTicketColorHex');
+      if (inColorHex) tp.color = inColorHex.value.trim();
+
+      const inThumb = document.getElementById('inputTicketThumbnailUrl');
+      if (inThumb) tp.thumbnailUrl = inThumb.value.trim();
+      const inBanner = document.getElementById('inputTicketBannerUrl');
+      if (inBanner) tp.bannerUrl = inBanner.value.trim();
+
+      const inWelcomeTitle = document.getElementById('inputTicketWelcomeTitle');
+      if (inWelcomeTitle) langData.welcomeTitle = inWelcomeTitle.value;
+      const inWelcomeMsg = document.getElementById('inputTicketWelcomeMsg');
+      if (inWelcomeMsg) langData.welcomeMsg = inWelcomeMsg.value;
+      const inWelcomeNote = document.getElementById('inputTicketWelcomeNote');
+      if (inWelcomeNote) langData.welcomeNote = inWelcomeNote.value;
+    }
+
+    function onTicketFormChange() {
+      saveTicketFormToData();
+      renderTicketPreview();
+    }
+
+    function onTicketColorPicker(val) {
+      const inColorHex = document.getElementById('inputTicketColorHex');
+      if (inColorHex) inColorHex.value = val;
+      onTicketFormChange();
+    }
+
+    function onTicketColorText(val) {
+      if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+        const inColor = document.getElementById('inputTicketColor');
+        if (inColor) inColor.value = val;
+      }
+      onTicketFormChange();
+    }
+
+    function clearTicketThumbnail() {
+      initTicketPanelData();
+      storeData.ticketPanel.thumbnailUrl = '';
+      const inThumb = document.getElementById('inputTicketThumbnailUrl');
+      if (inThumb) inThumb.value = '';
+      renderTicketPreview();
+      showToast('Đã gỡ ảnh Thumbnail!');
+    }
+
+    function clearTicketBanner() {
+      initTicketPanelData();
+      storeData.ticketPanel.bannerUrl = '';
+      const inBanner = document.getElementById('inputTicketBannerUrl');
+      if (inBanner) inBanner.value = '';
+      renderTicketPreview();
+      showToast('Đã gỡ ảnh Banner!');
+    }
+
+    function renderTicketPreview() {
+      initTicketPanelData();
+      const tp = storeData.ticketPanel;
+      const langData = tp[ticketPrevLang] || tp.vi || {};
+      const storeName = storeData.storeName || '4AM STORE';
+
+      // Title
+      const rawTitle = langData.title || (ticketPrevLang === 'en' ? '🎟️ SUPPORT & ORDER CENTER — {storeName}' : '🎟️ TRUNG TÂM HỖ TRỢ & MUA HÀNG — {storeName}');
+      const elTitle = document.getElementById('prevTicketTitle');
+      if (elTitle) elTitle.innerText = rawTitle.replace(/\{storeName\}/g, storeName);
+
+      // Subtitle
+      const rawSubtitle = langData.subtitle !== undefined ? langData.subtitle : (ticketPrevLang === 'en' ? 'Welcome to {storeName} official support center!' : 'Chào mừng bạn đến với hệ thống hỗ trợ của {storeName}!');
+      const elSubtitle = document.getElementById('prevTicketSubtitle');
+      if (elSubtitle) {
+        if (rawSubtitle.trim()) {
+          elSubtitle.innerText = rawSubtitle.replace(/\{storeName\}/g, storeName);
+          elSubtitle.classList.remove('hidden');
+        } else {
+          elSubtitle.classList.add('hidden');
+        }
+      }
+
+      // Lines
+      const elLines = document.getElementById('prevTicketLines');
+      if (elLines) {
+        elLines.innerHTML = '';
+        const lines = Array.isArray(langData.lines) ? langData.lines : [];
+        lines.forEach(l => {
+          if (!l || !l.trim()) return;
+          const p = document.createElement('p');
+          p.className = 'leading-relaxed';
+          // Convert **bold** to <strong>
+          const formatted = l.replace(/\{storeName\}/g, storeName)
+                             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+          p.innerHTML = formatted;
+          elLines.appendChild(p);
+        });
+      }
+
+      // Border Color
+      const box = document.getElementById('prevTicketEmbedBox');
+      if (box) {
+        box.style.borderColor = tp.color || '#5865F2';
+      }
+
+      // Thumbnail
+      const elThumb = document.getElementById('prevTicketThumbnail');
+      if (elThumb) {
+        const thumbUrl = tp.thumbnailUrl;
+        if (thumbUrl && thumbUrl.trim() && /^https?:\/\//i.test(thumbUrl.trim())) {
+          elThumb.src = thumbUrl.trim();
+          elThumb.classList.remove('hidden');
+        } else {
+          elThumb.classList.add('hidden');
+        }
+      }
+
+      // Banner
+      const elBannerBox = document.getElementById('prevTicketBannerBox');
+      const elBanner = document.getElementById('prevTicketBanner');
+      if (elBannerBox && elBanner) {
+        const bannerUrl = tp.bannerUrl;
+        if (bannerUrl && bannerUrl.trim() && /^https?:\/\//i.test(bannerUrl.trim())) {
+          elBanner.src = bannerUrl.trim();
+          elBannerBox.classList.remove('hidden');
+        } else {
+          elBannerBox.classList.add('hidden');
+        }
+      }
+
+      // Button Label
+      const elBtn = document.getElementById('prevTicketButton');
+      if (elBtn) {
+        const btnText = langData.buttonLabel || (ticketPrevLang === 'en' ? '🎟️ Open Support Ticket' : '🎟️ Mở Ticket Hỗ Trợ');
+        elBtn.innerHTML = '<span>' + btnText + '</span>';
+      }
+
+      // Prefix badge
+      const elPrefix = document.getElementById('prevTicketPrefixBadge');
+      if (elPrefix) {
+        elPrefix.innerText = (tp.ticketPrefix || 'ticket-support') + '-...';
+      }
+    }
+
+    async function syncTicketPanelToDiscord() {
+      const btn = document.getElementById('btnSyncTicketPanel');
+      const original = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Đang đồng bộ...</span>';
+
+      try {
+        saveTicketFormToData();
+        // Save first
+        const saveRes = await fetch('/api/save', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + authToken
+          },
+          body: JSON.stringify(storeData)
+        });
+        const saveJson = await saveRes.json();
+        if (!saveJson.ok) throw new Error(saveJson.error || 'Lỗi lưu cấu hình');
+
+        // Sync Ticket Panel & Rename channels
+        const syncRes = await fetch('/api/sync-ticket', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + authToken
+          }
+        });
+        const syncJson = await syncRes.json();
+        if (syncJson.ok) {
+          showToast('🎟️ Đã đồng bộ Ticket Panel và cập nhật tên kênh trên Discord!');
+        } else {
+          showToast(syncJson.error || 'Lỗi đồng bộ ticket', true);
+        }
+      } catch (e) {
+        showToast(e.message || 'Lỗi kết nối', true);
+      } finally {
+        btn.innerHTML = original;
+        btn.disabled = false;
+      }
+    }
+
+    // Initialize data on load
+    loadData();
+  </script>
+
+  <!-- ==================== ADVANCED EMOJI & ANIMATED PICKER POPOVER ==================== -->
+  <div id="emojiPickerPopover" class="fixed z-[100] hidden bg-[#12141A] border border-white/15 rounded-2xl shadow-2xl p-4 w-[390px] sm:w-[420px] max-w-[95vw] backdrop-blur-xl space-y-3.5 select-none animate-in fade-in zoom-in-95 duration-150">
+    <!-- Header -->
+    <div class="flex items-center justify-between border-b border-white/[0.08] pb-2.5">
+      <div class="flex items-center gap-2">
+        <span class="w-7 h-7 rounded-lg bg-brand-500/20 text-brand-400 flex items-center justify-center text-xs">
+          <i class="fa-solid fa-sparkles"></i>
+        </span>
+        <div>
+          <h4 class="text-xs font-extrabold text-white tracking-tight flex items-center gap-1.5">
+            Chọn Icon & Emoji Động
+            <span class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono font-bold">GIF Live</span>
+          </h4>
+          <p class="text-[10px] text-gray-400">Đồng bộ trực tiếp từ Server Discord của bot & kho GIF</p>
+        </div>
+      </div>
+      <button type="button" onclick="closeEmojiPicker()" class="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/[0.05] transition">
+        <i class="fa-solid fa-xmark text-sm"></i>
+      </button>
+    </div>
+
+    <!-- Live Search & Manual Tag Input -->
+    <div class="space-y-1.5">
+      <div class="relative flex items-center">
+        <i class="fa-solid fa-magnifying-glass absolute left-3 text-gray-500 text-xs pointer-events-none"></i>
+        <input type="text" id="emojiSearchInput" placeholder="Tìm icon hoặc dán tag <a:...>..." class="input-field w-full pl-8 pr-16 py-1.5 text-xs font-medium" oninput="onEmojiSearchInput(this.value)" onkeydown="if(event.key==='Enter') applyManualEmoji()">
+        <button type="button" onclick="applyManualEmoji()" class="absolute right-1 px-2.5 py-1 bg-brand-500 hover:bg-brand-600 active:scale-95 text-white text-[11px] font-bold rounded-md transition shadow">Dùng</button>
+      </div>
+      <div class="flex items-center justify-between text-[10px] text-gray-400 px-1">
+        <span class="flex items-center gap-1"><i class="fa-brands fa-windows text-brand-400"></i> Phím tắt Win: <kbd class="px-1 py-0.5 rounded bg-white/10 text-white font-mono text-[9px]">Win + .</kbd></span>
+        <span id="emojiPickerStatus" class="font-mono text-emerald-400 font-semibold">127 emojis</span>
+      </div>
+    </div>
+
+    <!-- Category Tabs -->
+    <div class="flex items-center gap-1 bg-[#0A0B0E] p-1 rounded-xl border border-white/[0.06] text-xs">
+      <button type="button" onclick="switchEmojiTab('server')" id="tabBtnServer" class="flex-1 py-1 px-2 rounded-lg font-bold text-[11px] transition bg-brand-500 text-white shadow-sm flex items-center justify-center gap-1.5">
+        <i class="fa-brands fa-discord text-[10px]"></i> Server (<span id="countServerEmojis">127</span>)
+      </button>
+      <button type="button" onclick="switchEmojiTab('popular')" id="tabBtnPopular" class="flex-1 py-1 px-2 rounded-lg font-bold text-[11px] transition text-gray-400 hover:text-white flex items-center justify-center gap-1.5">
+        <i class="fa-solid fa-bolt text-amber-400 text-[10px]"></i> GIF Hot
+      </button>
+      <button type="button" onclick="switchEmojiTab('unicode')" id="tabBtnUnicode" class="flex-1 py-1 px-2 rounded-lg font-bold text-[11px] transition text-gray-400 hover:text-white flex items-center justify-center gap-1.5">
+        <i class="fa-solid fa-icons text-sky-400 text-[10px]"></i> Icon Chuẩn
+      </button>
+    </div>
+
+    <!-- Emoji Grid Area -->
+    <div class="h-56 overflow-y-auto pr-1 space-y-3 custom-scrollbar" id="emojiScrollArea">
+      <!-- Dynamically filled by JS -->
+    </div>
+
+    <!-- Footer: Hovered emoji info -->
+    <div class="border-t border-white/[0.07] pt-2 flex items-center justify-between text-[11px]">
+      <div id="emojiHoverInfo" class="text-gray-400 truncate flex items-center gap-1.5 font-mono text-[10px]">
+        <i class="fa-regular fa-hand-pointer text-gray-500"></i> Di chuột vào icon để xem thông tin
+      </div>
+      <div id="emojiCurrentSelection" class="text-brand-300 font-bold font-mono text-[10px] shrink-0"></div>
+    </div>
+  </div>
+
+</body>
+</html>

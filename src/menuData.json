@@ -1,0 +1,243 @@
+{
+  "storeName": "4AM STORE",
+  "ticketChannelId": "1379348256743489546",
+  "paymentMethods": "Bank, Card, MoMo, Tsr, LTC",
+  "mainBannerUrl": "",
+  "logoUrl": "",
+  "defaultLanguage": "vi",
+  "menuEmbed": {
+    "color": "#2B2D31",
+    "bannerUrl": "",
+    "logoUrl": "",
+    "vi": {
+      "title": "BẢNG GIÁ CÁC MẶT HÀNG TẠI {storeName}",
+      "line1": "• Xem Giá Sản Phẩm Bên Dưới Nhé !",
+      "line2": "• Khi chọn được mặt hàng ưng ý, bạn có thể tạo Ticket để mua hàng tại {ticket}",
+      "paymentTitle": "╰─ PHƯƠNG THỨC THANH TOÁN",
+      "paymentMethods": "Bank, Card, MoMo, Tsr, LTC",
+      "footerNote": "Bảng giá không cố định, có thể thay đổi theo thời gian",
+      "placeholder": "Chọn dịch vụ mong muốn...",
+      "lines": [
+        "• Xem Giá Sản Phẩm Bên Dưới Nhé !",
+        "• Khi chọn được mặt hàng ưng ý, bạn có thể tạo Ticket để mua hàng tại {ticket}",
+        "• Hỗ trợ tư vấn & kích hoạt bảo hành 24/7!"
+      ]
+    },
+    "en": {
+      "title": "PRICE LIST AT {storeName}",
+      "line1": "• Check out product prices below!",
+      "line2": "• Once you find your desired item, create a ticket at {ticket}",
+      "paymentTitle": "╰─ PAYMENT METHODS",
+      "paymentMethods": "Bank Transfer, Crypto (LTC/USDT), Card",
+      "footerNote": "Prices are not fixed and may change over time",
+      "placeholder": "Select a product to view..."
+    }
+  },
+  "sellers": {
+    "shop_common": {
+      "isShop": true,
+      "name": "STK Chung của Shop",
+      "accounts": [
+        {
+          "bank": "MB Bank",
+          "account": "0123456789",
+          "owner": "4AM STORE",
+          "qr": ""
+        }
+      ]
+    },
+    "895890393806274570": {
+      "discordId": "895890393806274570",
+      "username": "4am.kz",
+      "globalName": "Kz",
+      "avatar": "https://cdn.discordapp.com/avatars/895890393806274570/783c3119ed807a3b89a2d3798184c780.png?size=128",
+      "name": "Kz (Quản trị viên)",
+      "accounts": [
+        {
+          "bank": "MB Bank",
+          "account": "0123456789",
+          "owner": "NGUYEN VAN A",
+          "qr": ""
+        },
+        {
+          "bank": "MoMo",
+          "account": "0901234567",
+          "owner": "NGUYEN VAN A",
+          "qr": ""
+        }
+      ]
+    },
+    "1107321461640794113": {
+      "discordId": "1107321461640794113",
+      "username": "4am.peshop",
+      "globalName": "pe",
+      "avatar": "https://cdn.discordapp.com/avatars/1107321461640794113/3d0dbd6ef1e67ba793cbe436cf2927c0.png?size=128",
+      "name": "pe",
+      "accounts": [
+        {
+          "bank": "MB Bank",
+          "account": "",
+          "owner": "",
+          "qr": ""
+        }
+      ]
+    }
+  },
+  "categories": {
+    "nicho": {
+      "seller": "895890393806274570",
+      "label": "Nicho Discord",
+      "emoji": "🔮",
+      "title": "Bảng Giá Nicho",
+      "subtitle": "NICHO BOSST CHÍNH HÃNG:",
+      "bannerUrl": "https://i.imgur.com/rN9xV4v.png",
+      "color": 10181046,
+      "items": [
+        "3 tháng lần đầu | 150.000 VNĐ",
+        "1 tháng login | 99.000 VNĐ",
+        "2 tháng login | 150.000 VNĐ",
+        "1 năm | 850.000 VNĐ",
+        "1 năm (G1FT) | 1.250.000 VNĐ"
+      ]
+    },
+    "boost": {
+      "seller": "895890393806274570",
+      "label": "Busst Server",
+      "emoji": "🌸",
+      "title": "Bảng Giá Boost Server",
+      "subtitle": "BOSST SERVER CHÍNH HÃNG:",
+      "bannerUrl": "https://i.imgur.com/rN9xV4v.png",
+      "color": 15277667,
+      "items": [
+        "14 Boost (Level 3) - 1 Tháng | 90.000 VNĐ",
+        "14 Boost (Level 3) - 3 Tháng | 220.000 VNĐ",
+        "Server 14 Boost Vĩnh Viễn (Bảo Hành) | Liên hệ"
+      ],
+      "handlers": [
+        "895890393806274570",
+        "1107321461640794113"
+      ]
+    },
+    "spotify": {
+      "seller": "shop_common",
+      "label": "Spotify Premium",
+      "emoji": "🟢",
+      "title": "Bảng Giá Spotify Premium",
+      "subtitle": "SPOTIFY PREMIUM BẢN QUYỀN:",
+      "bannerUrl": "https://i.imgur.com/W29F1cT.png",
+      "color": 1947988,
+      "items": [
+        "Spotify 3 Tháng (Cá nhân) | 65.000 VNĐ",
+        "Spotify 6 Tháng (Cá nhân) | 110.000 VNĐ",
+        "Spotify 1 Năm (Cá nhân) | 190.000 VNĐ"
+      ],
+      "accountIndex": "0"
+    },
+    "youtube": {
+      "seller": "895890393806274570",
+      "label": "Youtube Premium",
+      "emoji": "🔴",
+      "title": "Bảng Giá Youtube Premium",
+      "subtitle": "YOUTUBE PREMIUM CHÍNH CHỦ:",
+      "bannerUrl": "https://i.imgur.com/W29F1cT.png",
+      "color": 16711680,
+      "items": [
+        "Gia hạn 1 Tháng | 25.000 VNĐ",
+        "Gia hạn 6 Tháng | 140.000 VNĐ",
+        "Gia hạn 1 Năm | 250.000 VNĐ"
+      ]
+    },
+    "netflix": {
+      "seller": "895890393806274570",
+      "label": "Netflix",
+      "emoji": "🍿",
+      "title": "Bảng Giá Netflix",
+      "subtitle": "TÀI KHOẢN NETFLIX ULTRA HD 4K:",
+      "bannerUrl": "https://i.imgur.com/W29F1cT.png",
+      "color": 15010068,
+      "items": [
+        "1 Profile 1 Tháng | 65.000 VNĐ",
+        "1 Profile 3 Tháng | 180.000 VNĐ",
+        "1 Profile 6 Tháng | 340.000 VNĐ"
+      ]
+    },
+    "vps": {
+      "seller": "895890393806274570",
+      "label": "Cloud VPS",
+      "emoji": "🖥️",
+      "title": "Bảng Giá Cloud VPS",
+      "subtitle": "CLOUD VPS TỐC ĐỘ CAO (HÀ NỘI / SINGAPORE):",
+      "bannerUrl": "https://i.imgur.com/W29F1cT.png",
+      "color": 43263,
+      "items": [
+        "VPS 2 Core / 4GB RAM / 50GB SSD | 100.000 VNĐ/tháng",
+        "VPS 4 Core / 8GB RAM / 100GB SSD | 200.000 VNĐ/tháng",
+        "VPS 8 Core / 16GB RAM / 150GB SSD | 380.000 VNĐ/tháng"
+      ]
+    },
+    "bot": {
+      "seller": "895890393806274570",
+      "label": "Hosting Bot Discord",
+      "emoji": "🤖",
+      "title": "Bảng Giá Hosting Bot Discord",
+      "subtitle": "HOSTING BOT DISCORD 24/7 UPTIME 99.9%:",
+      "bannerUrl": "https://i.imgur.com/W29F1cT.png",
+      "color": 3066993,
+      "items": [
+        "Bot 1GB RAM (Node.js / Python) | 30.000 VNĐ/tháng",
+        "Bot 2GB RAM (Node.js / Python / Java) | 60.000 VNĐ/tháng",
+        "Bot 4GB RAM (Không giới hạn) | 110.000 VNĐ/tháng"
+      ]
+    }
+  },
+  "channels": {
+    "welcomeChannelId": "1548580662066548798",
+    "menuViChannelId": "1548637754471223366",
+    "ticketViChannelId": "1379348256743489546",
+    "ticketEnChannelId": "1548580697910939709",
+    "ticketCategoryId": "1441078154239410206",
+    "orderCategoryId": "1548580668747817010",
+    "roleViId": "1548580654965329920",
+    "roleEnId": "1548580657419264110",
+    "customerRoleId": "1427288885230178384"
+  },
+  "bilingualRoles": {
+    "vi": "1548580654965329920",
+    "en": "1548580657419264110"
+  },
+  "menuChannelId": "1548637754471223366",
+  "ticketPanel": {
+    "color": "#5865F2",
+    "thumbnailUrl": "",
+    "bannerUrl": "",
+    "channelNameVi": "『🎟』ticket-support",
+    "channelNameEn": "『🎟』ticket-support-en",
+    "ticketPrefix": "ticket-support",
+    "vi": {
+      "title": "🎟️ TRUNG TÂM HỖ TRỢ & MUA HÀNG — {storeName}",
+      "subtitle": "Chào mừng bạn đến với hệ thống hỗ trợ của {storeName}!",
+      "lines": [
+        "• Mua các dịch vụ **Discord Nitro, Boost Server, Spotify, Youtube, Netflix, VPS, Bot Hosting**...",
+        "• Hỗ trợ kỹ thuật, kiểm tra đơn hàng hoặc bảo hành.",
+        "👉 Bấm nút **\"🎟️ Mở Ticket Hỗ Trợ\"** bên dưới để tạo kênh chat riêng với Staff 24/7!"
+      ],
+      "buttonLabel": "🎟️ Mở Ticket Hỗ Trợ",
+      "welcomeTitle": "🎟️ TICKET HỖ TRỢ — {storeName}",
+      "welcomeMsg": "Xin chào <@{userId}>! Cảm ơn bạn đã liên hệ với **{storeName}**.",
+      "welcomeNote": "💬 *Vui lòng gửi câu hỏi hoặc dịch vụ bạn muốn tư vấn tại kênh này nhé!*"
+    },
+    "en": {
+      "title": "🎟️ SUPPORT & ORDER CENTER — {storeName}",
+      "subtitle": "Welcome to **{storeName}** official support center!",
+      "lines": [
+        "• Order services: **Discord Nitro, Server Boosts, Spotify, Netflix, VPS, Bot Hosting**...",
+        "• Technical support, order inquiries, or warranty.",
+        "👉 Click the **\"🎟️ Open Support Ticket\"** button below to start a private chat with our 24/7 staff!"
+      ],
+      "buttonLabel": "🎟️ Open Support Ticket",
+      "welcomeTitle": "🎟️ SUPPORT TICKET — {storeName}",
+      "welcomeMsg": "Hello <@{userId}>! Thank you for contacting **{storeName}**.",
+      "welcomeNote": "💬 *Please send your inquiries or details of what you need assistance with!*"
+    }
+  }
+}
