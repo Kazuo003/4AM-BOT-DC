@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-ui: "Plus Jakarta Sans";
+  --font-data: "JetBrains Mono";
+}
+
+:root, html {
+  color-scheme: dark;
+  font-family: var(--font-ui), system-ui, -apple-system, sans-serif;
+}
+body {
+  background-color: #0A0B0E;
+  font-family: var(--font-ui), system-ui, -apple-system, sans-serif;
+  color: #E2E4E9;
+}
+button, input, select, textarea {
+  font-family: var(--font-ui), system-ui, -apple-system, sans-serif;
+}
+code, kbd, pre, samp {
+  font-family: var(--font-data), ui-monospace, monospace;
+}
+
+/* Sleek scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0A0B0E; }
+::-webkit-scrollbar-thumb { background: #232732; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #323846; }
+
+@layer components {
+  /* Custom Glass & UI Surfaces */
+  .app-card {
+    background: #13151B;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 0.875rem;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.45);
+  }
+  .app-card-nested {
+    background: #0E1015;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 0.625rem;
+  }
+
+  /* Input & Form Styling */
+  .input-field {
+    background: #0B0D12;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    color: #F1F3F7;
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8125rem;
+    outline: none;
+    transition: all 0.15s ease-in-out;
+  }
+  .input-field:focus {
+    border-color: #5865F2;
+    box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.15);
+  }
+  .input-field::placeholder {
+    color: #646A7B;
+    font-size: 0.8125rem;
+  }
+
+  /* Dropdown Styling */
+  select.input-field {
+    color-scheme: dark !important;
+    background-color: #0B0D12;
+  }
+
+  /* Tab Switch Animation */
+  .tab-btn {
+    position: relative;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .tab-btn.active {
+    background: linear-gradient(135deg, rgba(88, 101, 242, 0.18) 0%, rgba(71, 82, 196, 0.08) 100%);
+    color: #FFFFFF;
+    border: 1px solid rgba(88, 101, 242, 0.35);
+  }
+  .tab-btn.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 3.5px;
+    border-radius: 0 4px 4px 0;
+    background: #5865F2;
+    box-shadow: 0 0 10px #5865F2;
+  }
+
+  /* Subtle hover transitions */
+  .hover-lift {
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  }
+  .hover-lift:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.5);
+  }
+}
+
+select option, select optgroup {
+  background-color: #13151B !important;
+  color: #F1F3F7 !important;
+  padding: 6px 10px;
+}
+select option:checked {
+  background-color: #5865F2 !important;
+  color: #FFFFFF !important;
+}
+
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid #8b95ff;
+  outline-offset: 2px;
+}
+
+@media (max-width: 767px) {
+  #primaryNav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-inline: -0.25rem;
+    padding-inline: 0.25rem;
+  }
+  #primaryNav > button {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    gap: 0.5rem;
+    padding-inline: 0.5rem;
+  }
+  #primaryNav > button > div:last-child > div:last-child { display: none; }
+  #primaryNav > button > div:last-child .truncate {
+    font-size: 0.6875rem;
+    line-height: 1.2;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  #primaryNav > #navDivider {
+    display: none;
+  }
+  #tabConfig > div:nth-child(2) > button { min-height: 44px; }
+  #subTabMenu .app-card.p-5, #subTabTicket .app-card.p-5 { padding: 1rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

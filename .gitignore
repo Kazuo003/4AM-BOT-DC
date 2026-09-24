@@ -10,6 +10,8 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
+.dashboard-users.json
+.dashboard-users.json.tmp
 
 # Prisma / DB
 prisma/dev.db
@@ -18,3 +20,10 @@ prisma/dev.db
 
 # OS
 .DS_Store
+
+# Backups
+backups/
+
+# Payment Ledger
+.payment-ledger.json
+.payment-ledger.json.tmp

@@ -84,20 +84,41 @@
     }
   },
   "categories": {
-    "nicho": {
+    "nc": {
       "seller": "895890393806274570",
       "label": "Nicho Discord",
       "emoji": "🔮",
       "title": "Bảng Giá Nicho",
-      "subtitle": "NICHO BOSST CHÍNH HÃNG:",
-      "bannerUrl": "https://i.imgur.com/rN9xV4v.png",
+      "subtitle": "Bảo hành full thời gian / 1 đổi 1 nếu lỗi",
+      "bannerUrl": "",
       "color": 10181046,
       "items": [
-        "3 tháng lần đầu | 150.000 VNĐ",
-        "1 tháng login | 99.000 VNĐ",
-        "2 tháng login | 150.000 VNĐ",
-        "1 năm | 850.000 VNĐ",
-        "1 năm (G1FT) | 1.250.000 VNĐ"
+        "Gói mới | 100.000 VNĐ",
+        "Gói mới | 100.000 VNĐ",
+        "Gói mới | 100.000 VNĐ",
+        "Gói mới | 100.000 VNĐ",
+        "Gói mới | 100.000 VNĐ",
+        "Gói mới | 100.000 VNĐ",
+        "Gói mới | 100.000 VNĐ",
+        "Gói mới | 100.000 VNĐ",
+        "Gói mới | 100.000 VNĐ",
+        "Gói mới | 100.000 VNĐ",
+        "Gói mới | 100.000 VNĐ"
+      ],
+      "labelEn": "Discord Nitro",
+      "titleEn": "Price List - Discord Nitro",
+      "subtitleEn": "Full warranty during subscription term",
+      "itemsEn": [
+        "3 Months (First time) | 150.000 VND",
+        "1 Month (Login) | 99.000 VND",
+        "2 Months (Login) | 150.000 VND",
+        "1 Year | 850.000 VND",
+        "1 Year (Gift) | 1.250.000 VND"
+      ],
+      "pingStaff": true,
+      "handlers": [
+        "895890393806274570",
+        "1107321461640794113"
       ]
     },
     "boost": {
@@ -105,7 +126,7 @@
       "label": "Busst Server",
       "emoji": "🌸",
       "title": "Bảng Giá Boost Server",
-      "subtitle": "BOSST SERVER CHÍNH HÃNG:",
+      "subtitle": "yêu mày ",
       "bannerUrl": "https://i.imgur.com/rN9xV4v.png",
       "color": 15277667,
       "items": [
@@ -116,14 +137,23 @@
       "handlers": [
         "895890393806274570",
         "1107321461640794113"
-      ]
+      ],
+      "labelEn": "Server Boosts",
+      "titleEn": "Price List - Server Boosts",
+      "subtitleEn": "No warranty",
+      "itemsEn": [
+        "14 Boosts (Level 3) - 1 Month | 90.000 VND",
+        "14 Boosts (Level 3) - 3 Months | 220.000 VND",
+        "Server 14 Boosts Lifetime (Warranty) | Contact Staff"
+      ],
+      "accountIndex": "0"
     },
     "spotify": {
       "seller": "shop_common",
       "label": "Spotify Premium",
       "emoji": "🟢",
       "title": "Bảng Giá Spotify Premium",
-      "subtitle": "SPOTIFY PREMIUM BẢN QUYỀN:",
+      "subtitle": "Bảo hành trọn thời gian sử dụng",
       "bannerUrl": "https://i.imgur.com/W29F1cT.png",
       "color": 1947988,
       "items": [
@@ -131,20 +161,36 @@
         "Spotify 6 Tháng (Cá nhân) | 110.000 VNĐ",
         "Spotify 1 Năm (Cá nhân) | 190.000 VNĐ"
       ],
-      "accountIndex": "0"
+      "accountIndex": "0",
+      "labelEn": "Spotify Premium",
+      "titleEn": "Price List - Spotify Premium",
+      "subtitleEn": "Full warranty during subscription",
+      "itemsEn": [
+        "Spotify 3 Months (Individual) | 65.000 VND",
+        "Spotify 6 Months (Individual) | 110.000 VND",
+        "Spotify 1 Year (Individual) | 190.000 VND"
+      ]
     },
     "youtube": {
       "seller": "895890393806274570",
       "label": "Youtube Premium",
       "emoji": "🔴",
       "title": "Bảng Giá Youtube Premium",
-      "subtitle": "YOUTUBE PREMIUM CHÍNH CHỦ:",
+      "subtitle": "Bảo hành chính chủ trọn thời gian gói",
       "bannerUrl": "https://i.imgur.com/W29F1cT.png",
       "color": 16711680,
       "items": [
         "Gia hạn 1 Tháng | 25.000 VNĐ",
         "Gia hạn 6 Tháng | 140.000 VNĐ",
         "Gia hạn 1 Năm | 250.000 VNĐ"
+      ],
+      "labelEn": "YouTube Premium",
+      "titleEn": "Price List - YouTube Premium",
+      "subtitleEn": "Full warranty during subscription",
+      "itemsEn": [
+        "Renewal 1 Month | 25.000 VND",
+        "Renewal 6 Months | 140.000 VND",
+        "Renewal 1 Year | 250.000 VND"
       ]
     },
     "netflix": {
@@ -152,13 +198,21 @@
       "label": "Netflix",
       "emoji": "🍿",
       "title": "Bảng Giá Netflix",
-      "subtitle": "TÀI KHOẢN NETFLIX ULTRA HD 4K:",
+      "subtitle": "Bảo hành 1 đổi 1 trong suốt thời gian gói",
       "bannerUrl": "https://i.imgur.com/W29F1cT.png",
       "color": 15010068,
       "items": [
         "1 Profile 1 Tháng | 65.000 VNĐ",
         "1 Profile 3 Tháng | 180.000 VNĐ",
         "1 Profile 6 Tháng | 340.000 VNĐ"
+      ],
+      "labelEn": "Netflix",
+      "titleEn": "Price List - Netflix",
+      "subtitleEn": "1-to-1 warranty throughout term",
+      "itemsEn": [
+        "1 Profile 1 Month | 65.000 VND",
+        "1 Profile 3 Months | 180.000 VND",
+        "1 Profile 6 Months | 340.000 VND"
       ]
     },
     "vps": {
@@ -166,13 +220,21 @@
       "label": "Cloud VPS",
       "emoji": "🖥️",
       "title": "Bảng Giá Cloud VPS",
-      "subtitle": "CLOUD VPS TỐC ĐỘ CAO (HÀ NỘI / SINGAPORE):",
+      "subtitle": "Bảo hành uptime 99.9% / Hỗ trợ kỹ thuật 24/7",
       "bannerUrl": "https://i.imgur.com/W29F1cT.png",
       "color": 43263,
       "items": [
         "VPS 2 Core / 4GB RAM / 50GB SSD | 100.000 VNĐ/tháng",
         "VPS 4 Core / 8GB RAM / 100GB SSD | 200.000 VNĐ/tháng",
         "VPS 8 Core / 16GB RAM / 150GB SSD | 380.000 VNĐ/tháng"
+      ],
+      "labelEn": "Cloud VPS",
+      "titleEn": "Price List - Cloud VPS",
+      "subtitleEn": "99.9% uptime warranty / 24/7 support",
+      "itemsEn": [
+        "VPS 2 Core / 4GB RAM / 50GB SSD | 100.000 VND/month",
+        "VPS 4 Core / 8GB RAM / 100GB SSD | 200.000 VND/month",
+        "VPS 8 Core / 16GB RAM / 150GB SSD | 380.000 VND/month"
       ]
     },
     "bot": {
@@ -180,13 +242,21 @@
       "label": "Hosting Bot Discord",
       "emoji": "🤖",
       "title": "Bảng Giá Hosting Bot Discord",
-      "subtitle": "HOSTING BOT DISCORD 24/7 UPTIME 99.9%:",
+      "subtitle": "Bảo hành hoạt động 24/7 / Setup miễn phí",
       "bannerUrl": "https://i.imgur.com/W29F1cT.png",
       "color": 3066993,
       "items": [
         "Bot 1GB RAM (Node.js / Python) | 30.000 VNĐ/tháng",
         "Bot 2GB RAM (Node.js / Python / Java) | 60.000 VNĐ/tháng",
         "Bot 4GB RAM (Không giới hạn) | 110.000 VNĐ/tháng"
+      ],
+      "labelEn": "Discord Bot Hosting",
+      "titleEn": "Price List - Discord Bot Hosting",
+      "subtitleEn": "DISCORD BOT HOSTING OFFICIAL:",
+      "itemsEn": [
+        "Bot 1GB RAM (Node.js / Python) | 30.000 VND/month",
+        "Bot 2GB RAM (Node.js / Python / Java) | 60.000 VND/month",
+        "Bot 4GB RAM (Unlimited) | 110.000 VND/month"
       ]
     }
   },
@@ -194,7 +264,6 @@
     "welcomeChannelId": "1548580662066548798",
     "menuViChannelId": "1548637754471223366",
     "ticketViChannelId": "1379348256743489546",
-    "ticketEnChannelId": "1548580697910939709",
     "ticketCategoryId": "1441078154239410206",
     "orderCategoryId": "1548580668747817010",
     "roleViId": "1548580654965329920",
@@ -211,7 +280,6 @@
     "thumbnailUrl": "",
     "bannerUrl": "",
     "channelNameVi": "『🎟』ticket-support",
-    "channelNameEn": "『🎟』ticket-support-en",
     "ticketPrefix": "ticket-support",
     "vi": {
       "title": "🎟️ TRUNG TÂM HỖ TRỢ & MUA HÀNG — {storeName}",

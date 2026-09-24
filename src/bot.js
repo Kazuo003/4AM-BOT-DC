@@ -1,5 +1,13 @@
 require('dotenv').config();
 
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('⚠️ [Anti-Crash] Unhandled Promise Rejection:', reason);
+});
+
+process.on('uncaughtException', (err, origin) => {
+  console.error('⚠️ [Anti-Crash] Uncaught Exception:', err, origin);
+});
+
 const {
   Client, GatewayIntentBits, Partials,
   ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle,
@@ -11,11 +19,15 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const { prisma } = require('./db');
 const { CATALOG, CURRENCY } = require('./catalog');
-const { ensureUser, findOrCreateProduct, createOrder, markPaid, attachTicket } = require('./order');
+const { ensureUser, findOrCreateProduct, createOrder, markPaid, attachTicket, updateOrderStatus, updateOrderAmount } = require('./order');
 const { specToLines, shortOrderNo } = require('./utils');
 const menuData = require('./menuData');
+const { verifyHmacSignature, processGpmWebhook } = require('./payment/gpmPay');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
+const crypto = require('crypto');
+const { promisify } = require('util');
 const getPort = require('get-port').default; // <- note .default
 
 const client = new Client({
@@ -132,17 +144,35 @@ async function createRenewalOrderForSubscription(subId) {
   return order;
 }
 
-module.exports = {
-  prisma,
-  ensureUser,
-  findOrCreateProduct,
-  createOrder,
-  markPaid,
-  attachTicket,
-  // ⬇️ export new helpers
-  upsertSubscriptionForPaidOrder,
-  createRenewalOrderForSubscription
-};
+function shortSpec(spec = {}, type = '') {
+  if (!spec || typeof spec !== 'object') return 'Cấu hình tiêu chuẩn';
+  const entries = Object.entries(spec);
+  if (!entries.length) return 'Cấu hình tiêu chuẩn';
+  return entries.map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' | ');
+}
+
+function plansListEmbed(type, products = []) {
+  const embed = new EmbedBuilder()
+    .setTitle(`📦 Bảng giá các gói ${type}`)
+    .setDescription('Vui lòng xem thông số cấu hình và lựa chọn gói phù hợp bên dưới:')
+    .setColor(0x00C2A8);
+
+  for (const p of products) {
+    let specDesc = '';
+    try {
+      const parsed = JSON.parse(p.specJson || '{}');
+      specDesc = specToLines(parsed);
+    } catch (_) {
+      specDesc = p.specJson || '';
+    }
+    embed.addFields({
+      name: `${p.name} — ${formatPrice(p.priceCents, p.currency)}`,
+      value: specDesc || 'Cấu hình tiêu chuẩn',
+      inline: false
+    });
+  }
+  return embed;
+}
 function shopButtons() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('buy_vps').setLabel('Buy VPS').setStyle(ButtonStyle.Primary),
@@ -294,21 +324,157 @@ function staffTicketControls(orderId) {
   );
 }
 
+// Parse price from string (e.g. "150.000 VNĐ" -> 150000)
+function parsePrice(priceStr) {
+  if (!priceStr) return 0;
+  const cleaned = String(priceStr).replace(/[^0-9]/g, '');
+  return parseInt(cleaned, 10) || 0;
+}
+
+// Prompt embed & select menu asking customer which variant/package they want to buy
+function buildCategoryItemPrompt(cat, categoryKey, lang = 'vi', orderDraftNo, selectedValue = null) {
+  const isEn = lang === 'en';
+  const rawItems = (isEn && cat.itemsEn && cat.itemsEn.length) ? cat.itemsEn : (cat.items || []);
+  const catName = (isEn && cat.labelEn) ? cat.labelEn : (cat.label || categoryKey || 'Sản phẩm');
+
+  const options = [];
+  rawItems.slice(0, 24).forEach((item, index) => {
+    const raw = String(item || '').trim().replace(/^•\s*/, '');
+    let label = raw;
+    let description = '';
+    if (raw.includes('|')) {
+      const parts = raw.split('|').map(s => s.trim());
+      label = parts[0];
+      description = (isEn ? 'Price: ' : 'Giá: ') + parts.slice(1).join(' | ');
+    }
+
+    let itemEmoji = undefined;
+    if (cat.emoji) {
+      const match = cat.emoji.match(/<a?:([a-zA-Z0-9_]+):(\d+)>/);
+      if (match) itemEmoji = { name: match[1], id: match[2] };
+      else itemEmoji = cat.emoji;
+    }
+
+    options.push({
+      label: label.slice(0, 100),
+      value: `item_${index}`,
+      description: description ? description.slice(0, 100) : undefined,
+      emoji: itemEmoji || '🏷️',
+      default: selectedValue === `item_${index}`
+    });
+  });
+
+  // Always append option: "Cần tư vấn và bàn bạc với người bán"
+  options.push({
+    label: (isEn ? 'Need consultation & discuss with seller' : 'Cần tư vấn và bàn bạc với người bán').slice(0, 100),
+    value: 'consult_seller',
+    description: (isEn ? 'Chat directly with staff / seller' : 'Trao đổi, tư vấn trực tiếp với nhân viên / người bán').slice(0, 100),
+    emoji: '💬',
+    default: selectedValue === 'consult_seller'
+  });
+
+  let placeholder = isEn ? '👉 Which type do you want to buy? Select here...' : '👉 Bạn muốn mua loại nào? Chọn tại đây...';
+  if (selectedValue === 'consult_seller') {
+    placeholder = isEn ? 'Selected: Consultation with seller (Click to change)' : 'Đã chọn: Cần tư vấn và bàn bạc với người bán (Bấm để đổi)';
+  } else if (selectedValue && selectedValue.startsWith('item_')) {
+    const idx = parseInt(selectedValue.replace('item_', ''), 10);
+    const chosenRaw = rawItems[idx];
+    if (chosenRaw) {
+      const pName = String(chosenRaw).split('|')[0].trim().replace(/^•\s*/, '');
+      placeholder = (isEn ? `Selected: ${pName} (Click to change)` : `Đã chọn: ${pName} (Bấm để đổi)`).slice(0, 100);
+    }
+  }
+
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId(`select_ticket_item|${orderDraftNo}|${categoryKey}|${lang}`)
+    .setPlaceholder(placeholder)
+    .addOptions(options);
+
+  const row = new ActionRowBuilder().addComponents(selectMenu);
+
+  const embed = new EmbedBuilder()
+    .setTitle(isEn ? `❓ WHICH TYPE OF ${catName.toUpperCase()} DO YOU WANT TO BUY?` : `❓ BẠN MUỐN MUA LOẠI NÀO CỦA ${catName.toUpperCase()}?`)
+    .setDescription(
+      isEn
+        ? `Please select the package/plan you wish to buy from the dropdown below.\nIf you are unsure or want custom terms, please select **"Need consultation & discuss with seller"**!`
+        : `Vui lòng chọn loại gói bạn muốn mua ở danh mục bên dưới.\nNếu bạn chưa rõ hoặc cần thỏa thuận riêng, vui lòng chọn **"Cần tư vấn và bàn bạc với người bán"** nhé!`
+    )
+    .setColor(cat.color || 0x00C2A8);
+
+  return { embed, row };
+}
+
+// Prompt embed & select menu for general ticket support
+function buildGeneralTicketPrompt(categories = {}, lang = 'vi', orderDraftNo, selectedCategory = null) {
+  const isEn = lang === 'en';
+  const options = [];
+
+  const catEntries = Object.entries(categories);
+  catEntries.slice(0, 24).forEach(([key, cat]) => {
+    let optEmoji = undefined;
+    if (cat.emoji) {
+      const match = cat.emoji.match(/<a?:([a-zA-Z0-9_]+):(\d+)>/);
+      if (match) optEmoji = { name: match[1], id: match[2] };
+      else optEmoji = cat.emoji;
+    }
+    const label = (isEn && cat.labelEn) ? cat.labelEn : (cat.label || key);
+    options.push({
+      label: label.slice(0, 100),
+      value: key,
+      description: (isEn ? `View packages & prices for ${label}` : `Xem các loại gói & giá của ${label}`).slice(0, 100),
+      emoji: optEmoji,
+      default: selectedCategory === key
+    });
+  });
+
+  // Always append: Cần tư vấn và bàn bạc với người bán
+  options.push({
+    label: (isEn ? 'Need consultation & discuss with seller' : 'Cần tư vấn và bàn bạc với người bán').slice(0, 100),
+    value: 'consult_seller',
+    description: (isEn ? 'Chat directly with staff / seller' : 'Trao đổi, tư vấn trực tiếp với nhân viên / người bán').slice(0, 100),
+    emoji: '💬',
+    default: selectedCategory === 'consult_seller'
+  });
+
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId(`select_general_ticket_category|${orderDraftNo}|${lang}`)
+    .setPlaceholder(isEn ? '👉 Select a product or ask for advice...' : '👉 Chọn sản phẩm cần mua hoặc yêu cầu tư vấn...')
+    .addOptions(options);
+
+  const row = new ActionRowBuilder().addComponents(selectMenu);
+
+  const embed = new EmbedBuilder()
+    .setTitle(isEn ? '❓ WHAT PRODUCT ARE YOU INTERESTED IN?' : '❓ BẠN CẦN TƯ VẤN HOẶC MUA SẢN PHẨM NÀO?')
+    .setDescription(
+      isEn
+        ? 'Please select the product you would like to purchase below to see its available packages, or select **"Need consultation & discuss with seller"** for direct support:'
+        : 'Vui lòng chọn sản phẩm bạn muốn mua bên dưới để xem các loại gói hiện có, hoặc chọn **"Cần tư vấn và bàn bạc với người bán"** để được hỗ trợ trực tiếp:'
+    )
+    .setColor(0x5865F2);
+
+  return { embed, row };
+}
+
 // Select menu shown inside ticket, with spec summary in description
 function ticketPlanSelectRow(type, products, orderDraftId) {
+  const options = products.map(p => {
+    const spec = JSON.parse(p.specJson);
+    return {
+      label: `${p.name} — ${formatPrice(p.priceCents, p.currency)}`,
+      description: shortSpec(spec, type).slice(0, 100), // Discord limit
+      value: p.sku
+    };
+  });
+  options.push({
+    label: 'Cần tư vấn và bàn bạc với người bán',
+    description: 'Trao đổi, tư vấn trực tiếp với nhân viên / người bán',
+    value: 'consult_seller',
+    emoji: '💬'
+  });
   const menu = new StringSelectMenuBuilder()
     .setCustomId(`ticket_plan_${orderDraftId}|${type}`)
-    .setPlaceholder(`Choose a ${type} plan`)
-    .addOptions(
-      products.map(p => {
-        const spec = JSON.parse(p.specJson);
-        return {
-          label: `${p.name} — ₹${(p.priceCents/100).toFixed(0)}/mo`,
-          description: shortSpec(spec, type).slice(0, 100), // Discord limit
-          value: p.sku
-        };
-      })
-    );
+    .setPlaceholder(`Choose a ${type} plan or ask for advice`)
+    .addOptions(options);
   return new ActionRowBuilder().addComponents(menu);
 }
 function extrasModal(orderId) {
@@ -325,122 +491,61 @@ function extrasModal(orderId) {
     );
 }
 
-async function handlePayUpi(i, prisma) {
-// UPI button -> show UPI ID + attach local QR image
-if (i.isButton() && i.customId.startsWith('pay_upi_')) {
-  const orderId = i.customId.split('pay_upi_')[1];
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: { ticket: true }
-  });
-  if (!order) return i.reply({ content: 'Order not found.', ephemeral: true });
 
-  const upiId = process.env.UPI_ID || 'not-set@upi';
-
-  // Resolve file path relative to src/bot.js -> ../assets/upi.png
-  const qrPath = path.resolve(__dirname, '../assets/upi.png');
-
-  // Sanity check
-  if (!fs.existsSync(qrPath)) {
-    console.error('UPI QR not found at:', qrPath);
-    return i.reply({
-      content: `UPI ID: \`${upiId}\`\n(QR image missing on server)`,
-      ephemeral: true
-    });
-  }
-
-  // Build embed with inline image from attachment
-  const embed = new EmbedBuilder()
-    .setTitle('Pay via UPI')
-    .setDescription([
-      'Pay manually using this UPI ID:',
-      `\`${upiId}\``,
-      '',
-      'After payment, click **✅ I Paid** so staff can verify.'
-    ].join('\n'))
-    .setColor(0x2ECC71)
-    .setImage('attachment://upi.png'); // bind the attached file to the embed image
-
-  const files = [{ attachment: qrPath, name: 'upi.png' }];
-
-  // Try ephemeral first (preferred), fall back to public message if needed
-  try {
-    await i.reply({ embeds: [embed], files, ephemeral: true });
-  } catch (err) {
-    console.warn('Ephemeral with file failed, falling back to channel message:', err);
-    await i.reply({ content: 'Sharing UPI details here (ephemeral failed).', ephemeral: true }).catch(() => {});
-    await i.channel.send({ content: `<@${i.user.id}>`, embeds: [embed], files });
-  }
-}
-}
-function staffTicketControls(orderId) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`staff_close_${orderId}`)
-      .setLabel('🔒 Close Ticket')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`staff_reopen_${orderId}`)
-      .setLabel('🔓 Reopen Ticket')
-      .setStyle(ButtonStyle.Secondary)
-  );
-}
 
 function startExpiryReminderScheduler() {
-  // run every hour (lightweight for SQLite)
   setInterval(async () => {
     try {
+      if (!client.isReady()) return;
       const now = new Date();
-const in3m = new Date(now.getTime() + 3 * 60 * 1000); // 3 minutes
-const in4m = new Date(now.getTime() + 4 * 60 * 1000); // 4 minutes
+      const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
-const expiring = await prisma.subscription.findMany({
-  where: {
-    status: 'ACTIVE',
-    remindedExpiry: false,
-    currentPeriodEnd: { gte: in3m, lt: in4m }
-  },
-  include: { user: true, product: true }
-});
+      const expiring = await prisma.subscription.findMany({
+        where: {
+          status: 'ACTIVE',
+          remindedExpiry: false,
+          currentPeriodEnd: { gte: now, lte: in24h }
+        },
+        include: { user: true, product: true }
+      });
 
       for (const sub of expiring) {
         try {
           const discordUser = await client.users.fetch(sub.user.discordId).catch(() => null);
           if (!discordUser) continue;
 
-          const when = sub.currentPeriodEnd.toLocaleString('en-IN');
+          const when = sub.currentPeriodEnd.toLocaleString('vi-VN');
           const renewBtn = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
               .setCustomId(`renew_sub_${sub.id}`)
-              .setLabel('🔁 Renew Now')
+              .setLabel('🔁 Gia hạn ngay')
               .setStyle(ButtonStyle.Primary)
           );
 
           const embed = new EmbedBuilder()
-            .setTitle('Your plan is expiring soon')
+            .setTitle('🔔 Dịch vụ của bạn sắp hết hạn')
             .setDescription([
-              `**Product:** ${sub.product.name} (${sub.product.sku})`,
-              `**Current period ends:** ${when}`,
+              `**Gói dịch vụ:** ${sub.product.name} (${sub.product.sku})`,
+              `**Thời hạn kết thúc:** ${when}`,
               '',
-              'Click **Renew Now** to start renewal in your server ticket.'
+              'Bấm **Gia hạn ngay** bên dưới để mở ticket gia hạn tự động trên server.'
             ].join('\n'))
             .setColor(0xF39C12);
 
           await discordUser.send({ embeds: [embed], components: [renewBtn] }).catch(() => {});
 
-          // mark reminded to avoid duplicates this period
           await prisma.subscription.update({
             where: { id: sub.id },
             data: { remindedExpiry: true }
           });
         } catch (e) {
-          console.error('DM expiry reminder failed:', e);
+          console.error('Lỗi gửi DM nhắc gia hạn:', e);
         }
       }
     } catch (err) {
-      console.error('Expiry reminder scheduler error:', err);
+      console.error('Lỗi scheduler nhắc gia hạn:', err);
     }
-  }, 60 * 60 * 1000); // hourly
+  }, 60 * 60 * 1000);
 }
 //
 // ----------- Ticket creation -----------
@@ -590,7 +695,7 @@ function buildPaymentBlock(seller, orderCode, accountIndex = 'all', lang = 'vi')
 function buildMenuMessage(lang = null, targetTicketChannelId = null) {
   const data = getMenuData();
   const currentLang = lang || data.defaultLanguage || 'vi';
-  const targetTicketId = targetTicketChannelId || (currentLang === 'en' ? (data.channels?.ticketEnChannelId || data.ticketChannelId) : (data.channels?.ticketViChannelId || data.ticketChannelId));
+  const targetTicketId = targetTicketChannelId || data.ticketChannelId || data.channels?.ticketViChannelId;
   const ticketMention = targetTicketId ? `<#${targetTicketId}>` : '#ticket';
 
   const defaultVi = {
@@ -619,26 +724,43 @@ function buildMenuMessage(lang = null, targetTicketChannelId = null) {
   const finalTitle = rawTitle.replace(/\{storeName\}/g, data.storeName || '4AM STORE');
 
   const descLines = [];
+  // 1. Tiêu đề chính to và nổi bật với Heading 1 Markdown (#)
+  const cleanMainTitle = finalTitle.replace(/^#+\s*/, '').trim();
+  descLines.push(`# ${cleanMainTitle}`);
+
   const linesToUse = Array.isArray(menuConf.lines)
     ? menuConf.lines
     : [menuConf.line1, menuConf.line2].filter(Boolean);
 
+  // 2. Các dòng giới thiệu làm nhỏ lại dạng subtext (-#) để phân cấp rõ ràng, thẩm mỹ
   for (const line of linesToUse) {
-    if (line && line.trim()) {
+    if (line !== undefined && line !== null && line.trim()) {
       const formatted = line
         .replace(/\{ticket\}/g, ticketMention)
-        .replace(/\{storeName\}/g, data.storeName || '4AM STORE');
-      descLines.push(formatted);
+        .replace(/\{storeName\}/g, data.storeName || '4AM STORE')
+        .trim();
+      const subLine = formatted.startsWith('-#') ? formatted : `-# ${formatted}`;
+      descLines.push(subLine);
     }
   }
 
-  if (menuConf.paymentTitle) descLines.push(menuConf.paymentTitle);
+  // 3. Tiêu đề thanh toán dạng Heading 3 để gọn gàng, không lấn át tiêu đề chính
+  if (menuConf.paymentTitle) {
+    descLines.push('');
+    let pTitle = menuConf.paymentTitle.trim();
+    let cleanTitle = pTitle.replace(/^#+\s*/, '').replace(/^\*\*|\*\*$/g, '').trim();
+    descLines.push(`### ${cleanTitle}`);
+  }
   if (menuConf.paymentMethods) {
     descLines.push('```');
-    descLines.push(menuConf.paymentMethods);
+    descLines.push(menuConf.paymentMethods.trim());
     descLines.push('```');
   }
-  if (menuConf.footerNote) descLines.push(`*${menuConf.footerNote}*`);
+  if (menuConf.footerNote) {
+    const fNote = menuConf.footerNote.trim();
+    const cleanFoot = fNote.startsWith('-#') ? fNote : `-# *${fNote.replace(/^\*|\*$/g, '')}*`;
+    descLines.push(cleanFoot);
+  }
 
   let embedColor = 0x2B2D31;
   const rawColor = data.menuEmbed?.color;
@@ -649,9 +771,9 @@ function buildMenuMessage(lang = null, targetTicketChannelId = null) {
   }
 
   const menuEmbed = new EmbedBuilder()
-    .setTitle(finalTitle)
     .setDescription(descLines.join('\n'))
     .setColor(embedColor);
+
 
   const banner = data.menuEmbed?.bannerUrl !== undefined ? data.menuEmbed.bannerUrl : data.mainBannerUrl;
   if (banner && banner.trim()) {
@@ -714,7 +836,7 @@ function buildMenuMessage(lang = null, targetTicketChannelId = null) {
  * - Category TICKET: Chứa ticket mới của bot (ticket cũ chuyển sang OWOVN)
  * - Phân quyền ẩn tất cả các danh mục khác đối với @everyone
  */
-async function setupBilingualServer(guild) {
+async function unlockServerChannels(guild) {
   if (!guild) throw new Error('Không tìm thấy Server Discord (Guild).');
 
   const data = getMenuData();
@@ -722,37 +844,32 @@ async function setupBilingualServer(guild) {
   const botMember = guild.members.me || await guild.members.fetch(client.user.id);
   const everyoneRole = guild.roles.everyone;
 
-  // 1. Roles: Find or create "@Tiếng Việt", "@English", and "Lucid Customer"
-  let roleVi = guild.roles.cache.find(r => r.name === 'Tiếng Việt');
-  if (!roleVi) {
-    roleVi = await guild.roles.create({
-      name: 'Tiếng Việt',
-      color: 0xE74C3C,
-      reason: 'Role hiển thị cụm kênh Tiếng Việt cho server song ngữ',
-      mentionable: false
-    });
+  // 1. Delete or clean up language roles "@Tiếng Việt" and "@English"
+  const roleVi = guild.roles.cache.find(r => r.name === 'Tiếng Việt');
+  if (roleVi) {
+    await roleVi.delete('Xóa role phân biệt ngôn ngữ theo yêu cầu').catch(() => {});
+  }
+  const roleEn = guild.roles.cache.find(r => r.name === 'English');
+  if (roleEn) {
+    await roleEn.delete('Xóa role phân biệt ngôn ngữ theo yêu cầu').catch(() => {});
   }
 
-  let roleEn = guild.roles.cache.find(r => r.name === 'English');
-  if (!roleEn) {
-    roleEn = await guild.roles.create({
-      name: 'English',
-      color: 0x3498DB,
-      reason: 'Role hiển thị cụm kênh English cho server song ngữ',
-      mentionable: false
-    });
-  }
-
-  // Customer Role: Lucid Customer (role khách hàng cơ bản khi mua hàng)
+  // Ensure Customer Role: Lucid Customer exists
   let roleLucid = guild.roles.cache.find(r => r.name === 'Lucid Customer');
   if (!roleLucid) {
     roleLucid = await guild.roles.create({
       name: 'Lucid Customer',
       color: 0x636E72,
       hoist: true,
-      reason: 'Role khách hàng mua lần đầu tại shop',
+      reason: 'Role khách hàng mua hàng tại shop',
       mentionable: false
-    });
+    }).catch(() => null);
+  }
+
+  // Delete language selection channel if it exists
+  const selectLangChan = guild.channels.cache.find(c => c.name.includes('select-language'));
+  if (selectLangChan) {
+    await selectLangChan.delete('Xóa kênh chọn role ngôn ngữ không còn cần thiết').catch(() => {});
   }
 
   // Helper to find or create a text channel inside a category
@@ -782,58 +899,7 @@ async function setupBilingualServer(guild) {
     return ch;
   }
 
-  // 2. ENTRY CHANNEL: #『🌐』select-language inside Category 4AM
-  const cat4AM = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name.toLowerCase().includes('4am'));
-  const selectLangOverwrites = [
-    { id: everyoneRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
-    { id: botMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.ManageMessages] }
-  ];
-  const welcomeChannel = await getOrCreateTextChannel('『🌐』select-language', cat4AM, selectLangOverwrites);
-
-  if (cat4AM) {
-    await cat4AM.permissionOverwrites.edit(everyoneRole.id, { ViewChannel: true }).catch(() => {});
-  }
-
-  // Delete legacy category ─── 🌐 WELCOME ─── if exists
-  const catWelcome = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name.includes('WELCOME'));
-  if (catWelcome) await catWelcome.delete().catch(() => {});
-
-  const welcomeEmbed = new EmbedBuilder()
-    .setTitle(`🌐 SELECT YOUR LANGUAGE / CHỌN NGÔN NGỮ — ${data.storeName || '4AM STORE'}`)
-    .setDescription([
-      '👋 **Chào mừng bạn đến với server! / Welcome to our server!**',
-      '',
-      'Vui lòng chọn ngôn ngữ bên dưới để mở khóa các kênh mua hàng & hỗ trợ tương ứng.',
-      'Please select your preferred language below to unlock store and support channels.',
-      '',
-      '🇻🇳 **Tiếng Việt:** Bấm nút màu xanh lá bên dưới để mở cụm kênh tiếng Việt.',
-      '🇬🇧 **English:** Click the blue button below to access English channels.'
-    ].join('\n'))
-    .setColor(0x5865F2);
-
-  if (data.logoUrl) welcomeEmbed.setThumbnail(data.logoUrl);
-
-  const langRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('role_lang_vi')
-      .setLabel('🇻🇳 Tiếng Việt')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId('role_lang_en')
-      .setLabel('🇬🇧 English')
-      .setStyle(ButtonStyle.Primary)
-  );
-
-  try {
-    const fetched = await welcomeChannel.messages.fetch({ limit: 10 });
-    const botMsgs = fetched.filter(m => m.author.id === client.user.id);
-    for (const m of botMsgs.values()) {
-      await m.delete().catch(() => {});
-    }
-  } catch (_) {}
-  await welcomeChannel.send({ embeds: [welcomeEmbed], components: [langRow] });
-
-  // 3. Category ORDER (all uppercase, no emoji)
+  // 2. Category ORDER - Open for @everyone
   let catOrder = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === 'ORDER');
   const catViOld = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name.includes('TIẾNG VIỆT'));
   if (!catOrder && catViOld) {
@@ -845,220 +911,99 @@ async function setupBilingualServer(guild) {
     });
   }
 
-  // Category ORDER permissions
+  // Category ORDER permissions: Allow @everyone to view
   await catOrder.permissionOverwrites.set([
-    { id: everyoneRole.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-    { id: roleVi.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory] },
-    { id: roleEn.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory] },
+    { id: everyoneRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory] },
     { id: staffRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.ManageMessages] },
     { id: botMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ManageChannels] }
-  ]);
+  ]).catch(() => {});
 
-  // Unified Menu channel (single channel with interactive language toggle, visible to BOTH @Tiếng Việt and @English)
+  // 3. Menu channel (accessible to @everyone, read-only with language buttons)
   const menuOverwrites = [
-    { id: everyoneRole.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-    { id: roleVi.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
-    { id: roleEn.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
+    { id: everyoneRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
     { id: botMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ManageChannels] },
     { id: staffRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
   ];
   const menuViChannel = await getOrCreateTextChannel('『🛒』menu', catOrder, menuOverwrites);
 
-  // Ticket VI (only visible to @Tiếng Việt)
-  const ticketViOverwrites = [
-    { id: everyoneRole.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-    { id: roleVi.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
-    { id: roleEn.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-    { id: botMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ManageChannels] },
-    { id: staffRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
-  ];
+  // 4. Ticket channels (accessible to @everyone)
   const tpChans = data.ticketPanel || {};
   const ticketViChannelName = tpChans.channelNameVi || '『🎟』ticket-support';
-  const ticketViChannel = await getOrCreateTextChannel(ticketViChannelName, catOrder, ticketViOverwrites);
-
-  // Ticket EN (only visible to @English)
-  const ticketEnOverwrites = [
-    { id: everyoneRole.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-    { id: roleEn.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
-    { id: roleVi.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+  const ticketOverwrites = [
+    { id: everyoneRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
     { id: botMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ManageChannels] },
     { id: staffRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
   ];
-  const ticketEnChannelName = tpChans.channelNameEn || '『🎟』ticket-support-en';
-  const ticketEnChannel = await getOrCreateTextChannel(ticketEnChannelName, catOrder, ticketEnOverwrites);
+  const ticketViChannel = await getOrCreateTextChannel(ticketViChannelName, catOrder, ticketOverwrites);
 
-  // Delete redundant menu-en channel if exists (as requested: only 1 menu channel needed)
-  const tempMenuEn = guild.channels.cache.find(c => c.name === '『🛒』menu-en');
-  if (tempMenuEn) await tempMenuEn.delete().catch(() => {});
-
-  // Delete redundant temp channels and categories
-  const tempChatVi = guild.channels.cache.find(c => c.name === '『💬』chat-vi');
-  if (tempChatVi) await tempChatVi.delete().catch(() => {});
-  const tempChatEn = guild.channels.cache.find(c => c.name === '『💬』chat-en');
-  if (tempChatEn) await tempChatEn.delete().catch(() => {});
-
-  const catEnOld = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name.includes('ENGLISH ZONE'));
-  if (catEnOld) await catEnOld.delete().catch(() => {});
-  const catTicketsExtra = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name.includes('TICKETS') && c.name.includes('───'));
-  if (catTicketsExtra) await catTicketsExtra.delete().catch(() => {});
-
-  // 4. Configure DISCORD.GG/FOURAM Category
-  const catFouram = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name.includes('FOURAM'));
-  if (catFouram) {
-    await catFouram.permissionOverwrites.set([
-      { id: everyoneRole.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-      { id: roleVi.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
-      { id: roleEn.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
-      { id: botMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageChannels] }
-    ]);
-
-    const chVieChat = guild.channels.cache.find(c => c.name.includes('vie・chat'));
-    if (chVieChat) {
-      await chVieChat.permissionOverwrites.set([
-        { id: everyoneRole.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: roleVi.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles, PermissionsBitField.Flags.EmbedLinks] },
-        { id: roleEn.id, deny: [PermissionsBitField.Flags.ViewChannel] }
-      ]);
-    }
-
-    const chForeignChat = guild.channels.cache.find(c => c.name.includes('foreign・chat'));
-    if (chForeignChat) {
-      await chForeignChat.permissionOverwrites.set([
-        { id: everyoneRole.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: roleEn.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles, PermissionsBitField.Flags.EmbedLinks] },
-        { id: roleVi.id, deny: [PermissionsBitField.Flags.ViewChannel] }
-      ]);
-    }
+  // Delete redundant temp channels (including old separate EN ticket channels)
+  const redundantNames = ['『🛒』menu-en', '『💬』chat-vi', '『💬』chat-en', '『🎟』ticket-support-en', 'ticket-support-en'];
+  for (const rName of redundantNames) {
+    const ch = guild.channels.cache.find(c => c.name === rName);
+    if (ch) await ch.delete().catch(() => {});
   }
 
-  // 5. Feedback channel
-  const chFeedback = guild.channels.cache.find(c => c.name.includes('feedback'));
-  if (chFeedback) {
-    await chFeedback.permissionOverwrites.set([
-      { id: everyoneRole.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-      { id: roleVi.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.SendMessages] },
-      { id: roleEn.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.SendMessages] }
-    ]);
-  }
-
-  // 6. Category TICKET for new tickets & move old tickets to OWOVN
+  // 5. Category TICKET for active customer tickets (Strictly Private for customer & staff)
   const catTicketTarget = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === 'TICKET') ||
                           guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.id === '1441078154239410206');
-  const catOwovn = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name.includes('OWOVN'));
 
-  if (catTicketTarget && catOwovn) {
-    const oldTickets = guild.channels.cache.filter(c => c.parentId === catTicketTarget.id && c.type === ChannelType.GuildText);
-    for (const t of oldTickets.values()) {
-      await t.setParent(catOwovn.id, { lockPermissions: false }).catch(() => {});
-    }
-
+  if (catTicketTarget) {
     await catTicketTarget.permissionOverwrites.set([
       { id: everyoneRole.id, deny: [PermissionsBitField.Flags.ViewChannel] },
       { id: staffRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageMessages, PermissionsBitField.Flags.ReadMessageHistory] },
       { id: botMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.ManageMessages] }
-    ]);
+    ]).catch(() => {});
   }
 
-  // 7. Lock all other categories & channels from @everyone (Channel-level security)
-  const communityCatNames = ['28 . 06 . 2025', 'DISCORD.GG/FOURAM', 'SERVICE', 'GIVEAWAY', 'Auction', 'PARTNER 🤝', 'TICKET & VOUCH'];
-  const allCategories = guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory);
-  for (const cat of allCategories.values()) {
-    if (cat.id === cat4AM?.id) continue;
-    await cat.permissionOverwrites.edit(everyoneRole.id, { ViewChannel: false }).catch(() => {});
-    if (communityCatNames.some(n => cat.name.includes(n))) {
-      await cat.permissionOverwrites.edit(roleVi.id, { ViewChannel: true, ReadMessageHistory: true }).catch(() => {});
-      await cat.permissionOverwrites.edit(roleEn.id, { ViewChannel: true, ReadMessageHistory: true }).catch(() => {});
+  // 6. Absolute Safeguard: Strictly lock down private/staff/admin/log/ticket categories and channels
+  // NEVER unlock these channels to @everyone!
+  const privateKeywords = ['log', 'staff', 'admin', 'mod', 'vc', 'kho-anh', 'ticket', 'farm', 'owovn', 'foreign'];
+  const allGuildChannels = await guild.channels.fetch().catch(() => guild.channels.cache);
+  for (const [, ch] of allGuildChannels) {
+    if (!ch) continue;
+    const chName = (ch.name || '').toLowerCase();
+    const parentName = (ch.parent?.name || '').toLowerCase();
+    const isPrivate = privateKeywords.some(kw => chName.includes(kw) || parentName.includes(kw));
+
+    if (isPrivate) {
+      await ch.permissionOverwrites.edit(everyoneRole.id, {
+        ViewChannel: false
+      }).catch(() => {});
     }
   }
 
-  // Ensure channel-level overrides don't leak to @everyone and separate languages cleanly
-  const allChannels = await guild.channels.fetch();
-  const viOnlyKeywords = ['vie・chat', '『🇻🇳』4am', '『📜』rule', '『📜』tos', '『🔔』announcement', '『❓』faq', 'role・info'];
-  const enOnlyKeywords = ['foreign・chat', 'about-us', 'rules-en', 'tos-en', 'announcement-en', 'faq-en', 'role・info-en', 'role-info-en'];
-
-  for (const [, ch] of allChannels) {
-    if (!ch || ch.type === ChannelType.GuildCategory) continue;
-
-    // Special handling for 4AM category
-    if (cat4AM && ch.parentId === cat4AM.id) {
-      if (ch.name.includes('select-language')) {
-        await ch.permissionOverwrites.edit(everyoneRole.id, { ViewChannel: true, ReadMessageHistory: true }).catch(() => {});
-      } else if (ch.name.includes('about-us')) {
-        await ch.permissionOverwrites.edit(everyoneRole.id, { ViewChannel: false }).catch(() => {});
-        await ch.permissionOverwrites.edit(roleEn.id, { ViewChannel: true, ReadMessageHistory: true }).catch(() => {});
-        await ch.permissionOverwrites.edit(roleVi.id, { ViewChannel: false }).catch(() => {});
-      } else if (ch.name.includes('4am')) {
-        await ch.permissionOverwrites.edit(everyoneRole.id, { ViewChannel: false }).catch(() => {});
-        await ch.permissionOverwrites.edit(roleVi.id, { ViewChannel: true, ReadMessageHistory: true }).catch(() => {});
-        await ch.permissionOverwrites.edit(roleEn.id, { ViewChannel: false }).catch(() => {});
-      }
-      continue;
-    }
-
-    // Deny ViewChannel on the channel itself for @everyone
-    await ch.permissionOverwrites.edit(everyoneRole.id, { ViewChannel: false }).catch(() => {});
-
-    // For community channels, grant view to roleVi & roleEn based on language keywords
-    const parentName = ch.parent ? ch.parent.name : '';
-    if (communityCatNames.some(name => parentName.includes(name))) {
-      const lowerName = ch.name.toLowerCase();
-      const isViOnly = viOnlyKeywords.some(k => lowerName.includes(k.toLowerCase()) && !lowerName.includes('-en'));
-      const isEnOnly = enOnlyKeywords.some(k => lowerName.includes(k.toLowerCase()));
-
-      if (isViOnly) {
-        const canSend = lowerName.includes('vie・chat');
-        await ch.permissionOverwrites.edit(roleVi.id, { ViewChannel: true, ReadMessageHistory: true, SendMessages: canSend }).catch(() => {});
-        await ch.permissionOverwrites.edit(roleEn.id, { ViewChannel: false }).catch(() => {});
-      } else if (isEnOnly) {
-        const canSend = lowerName.includes('foreign・chat');
-        await ch.permissionOverwrites.edit(roleEn.id, { ViewChannel: true, ReadMessageHistory: true, SendMessages: canSend }).catch(() => {});
-        await ch.permissionOverwrites.edit(roleVi.id, { ViewChannel: false }).catch(() => {});
-      } else {
-        await ch.permissionOverwrites.edit(roleVi.id, { ViewChannel: true, ReadMessageHistory: true }).catch(() => {});
-        await ch.permissionOverwrites.edit(roleEn.id, { ViewChannel: true, ReadMessageHistory: true }).catch(() => {});
-      }
-    }
-  }
-
-  // 8. Save channels into menuData
+  // 7. Update and save clean channels into menuData
   data.channels = {
-    welcomeChannelId: welcomeChannel.id,
     menuViChannelId: menuViChannel.id,
     ticketViChannelId: ticketViChannel.id,
-    ticketEnChannelId: ticketEnChannel.id,
     ticketCategoryId: catTicketTarget?.id || '1441078154239410206',
     orderCategoryId: catOrder.id,
-    roleViId: roleVi.id,
-    roleEnId: roleEn.id,
-    customerRoleId: roleLucid.id
+    customerRoleId: roleLucid?.id || '1427288885230178384'
   };
-  data.bilingualRoles = {
-    vi: roleVi.id,
-    en: roleEn.id
-  };
+  delete data.bilingualRoles;
+  delete data.channels.ticketEnChannelId;
   data.menuChannelId = menuViChannel.id;
   data.ticketChannelId = ticketViChannel.id;
 
   const menuMod = require('./menuData');
   menuMod.saveData(data);
 
-  // 9. Synchronize unified menu and tickets
+  // 8. Synchronize unified menu and tickets (bilingual panels)
   await syncMenuChannel(menuViChannel.id, data.defaultLanguage || 'vi');
-  await syncTicketChannel(ticketViChannel.id, 'vi');
-  await syncTicketChannel(ticketEnChannel.id, 'en');
+  await syncTicketChannel(ticketViChannel.id, data.defaultLanguage || 'vi');
 
   return {
     ok: true,
-    roles: { vi: roleVi, en: roleEn },
-    categories: { fouram: cat4AM, order: catOrder, ticket: catTicketTarget },
+    categories: { order: catOrder, ticket: catTicketTarget },
     channels: {
-      welcome: welcomeChannel,
       menuVi: menuViChannel,
-      ticketVi: ticketViChannel,
-      ticketEn: ticketEnChannel
+      ticketVi: ticketViChannel
     }
   };
 }
+
+// Alias for backwards compatibility
+const setupBilingualServer = unlockServerChannels;
 
 async function syncMenuChannel(targetChannelId = null, targetLang = null) {
   const data = getMenuData();
@@ -1074,7 +1019,7 @@ async function syncMenuChannel(targetChannelId = null, targetLang = null) {
   }
 
   const langToUse = targetLang || data.defaultLanguage || 'vi';
-  const targetTicketId = (langToUse === 'en') ? (data.channels?.ticketEnChannelId || data.ticketChannelId) : (data.channels?.ticketViChannelId || data.ticketChannelId);
+  const targetTicketId = data.ticketChannelId || data.channels?.ticketViChannelId;
   const messageData = buildMenuMessage(langToUse, targetTicketId);
 
   // Dọn dẹp tin nhắn cũ của bot trong kênh Menu để tránh bị spam / trôi
@@ -1092,31 +1037,15 @@ async function syncMenuChannel(targetChannelId = null, targetLang = null) {
   console.log(`✅ Đã đồng bộ bảng giá vào kênh #${channel.name} (${langToUse.toUpperCase()})`);
 }
 
-async function syncTicketChannel(targetChannelId = null, targetLang = null) {
+function buildTicketMessage(lang = null) {
   const data = getMenuData();
-  const ticketChannelId = targetChannelId || data.channels?.ticketViChannelId || process.env.TICKET_PANEL_CHANNEL_ID || '1379348256743489546';
-  const channel = await client.channels.fetch(ticketChannelId).catch(() => null);
-  if (!channel || !channel.isTextBased()) return;
-
-  const isEn = (targetLang === 'en');
+  const currentLang = (lang === 'en') ? 'en' : 'vi';
+  const isEn = currentLang === 'en';
   const tp = data.ticketPanel || {};
   const langConf = isEn ? (tp.en || {}) : (tp.vi || {});
   const storeName = data.storeName || '4AM STORE';
 
-  // 1. Rename channel if desired name is configured and different
-  const desiredChannelName = isEn
-    ? (tp.channelNameEn || '『🎟』ticket-support-en')
-    : (tp.channelNameVi || '『🎟』ticket-support');
-  if (channel.name !== desiredChannelName && typeof channel.setName === 'function') {
-    try {
-      await channel.setName(desiredChannelName);
-      console.log(`🏷️ Đã đổi tên kênh ticket trên Discord thành: #${desiredChannelName}`);
-    } catch (e) {
-      console.warn(`Không thể đổi tên kênh #${channel.name}:`, e.message);
-    }
-  }
-
-  // 2. Build Title & Description
+  // 1. Build Title & Description
   const rawTitle = langConf.title || (isEn ? '🎟️ SUPPORT & ORDER CENTER — {storeName}' : '🎟️ TRUNG TÂM HỖ TRỢ & MUA HÀNG — {storeName}');
   const embedTitle = rawTitle.replace(/\{storeName\}/g, storeName);
 
@@ -1126,9 +1055,15 @@ async function syncTicketChannel(targetChannelId = null, targetLang = null) {
     descLines.push('');
   }
   if (Array.isArray(langConf.lines) && langConf.lines.length > 0) {
-    langConf.lines.forEach(l => {
-      if (l && l.trim()) descLines.push(l.trim().replace(/\{storeName\}/g, storeName));
-    });
+    for (const l of langConf.lines) {
+      if (l !== undefined && l !== null) {
+        if (l.trim()) {
+          descLines.push(l.replace(/\{storeName\}/g, storeName));
+        } else if (descLines.length > 0 && descLines[descLines.length - 1] !== '') {
+          descLines.push('');
+        }
+      }
+    }
   } else {
     // Fallback default lines
     if (isEn) {
@@ -1170,13 +1105,49 @@ async function syncTicketChannel(targetChannelId = null, targetLang = null) {
   }
 
   const btnLabel = langConf.buttonLabel || (isEn ? '🎟️ Open Support Ticket' : '🎟️ Mở Ticket Hỗ Trợ');
-  const row = new ActionRowBuilder().addComponents(
+  const actionRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(isEn ? 'create_general_ticket|en' : 'create_general_ticket|vi')
+      .setCustomId(`create_general_ticket|${currentLang}`)
       .setLabel(btnLabel)
       .setStyle(ButtonStyle.Success)
   );
 
+  const langButtonsRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('switch_ticket_lang|vi')
+      .setLabel('🇻🇳 Tiếng Việt')
+      .setStyle(currentLang === 'vi' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('switch_ticket_lang|en')
+      .setLabel('🇬🇧 English')
+      .setStyle(currentLang === 'en' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [actionRow, langButtonsRow] };
+}
+
+async function syncTicketChannel(targetChannelId = null, targetLang = null) {
+  const data = getMenuData();
+  const ticketChannelId = targetChannelId || data.ticketChannelId || data.channels?.ticketViChannelId || process.env.TICKET_PANEL_CHANNEL_ID || '1379348256743489546';
+  const channel = await client.channels.fetch(ticketChannelId).catch(() => null);
+  if (!channel || !channel.isTextBased()) return;
+
+  const defaultLang = targetLang || data.defaultLanguage || 'vi';
+  const tp = data.ticketPanel || {};
+
+  // 1. Rename channel if desired name is configured and different
+  const desiredChannelName = tp.channelNameVi || '『🎟』ticket-support';
+  if (channel.name !== desiredChannelName && typeof channel.setName === 'function') {
+    try {
+      await channel.setName(desiredChannelName);
+      console.log(`🏷️ Đã đổi tên kênh ticket trên Discord thành: #${desiredChannelName}`);
+    } catch (e) {
+      console.warn(`Không thể đổi tên kênh #${channel.name}:`, e.message);
+    }
+  }
+
+  // 2. Build bilingual ticket message & clean old bot messages
+  const messageData = buildTicketMessage(defaultLang);
   try {
     const fetched = await channel.messages.fetch({ limit: 20 });
     const botMsgs = fetched.filter(m => m.author.id === client.user.id);
@@ -1185,12 +1156,20 @@ async function syncTicketChannel(targetChannelId = null, targetLang = null) {
     }
   } catch (_) {}
 
-  await channel.send({ embeds: [embed], components: [row] });
-  console.log(`✅ Đã đồng bộ ticket panel vào kênh #${channel.name} (${isEn ? 'EN' : 'VI'})`);
+  await channel.send(messageData);
+  console.log(`✅ Đã đồng bộ ticket panel song ngữ vào kênh #${channel.name} (${defaultLang.toUpperCase()})`);
 
-  // Nếu sync mặc định (không truyền targetChannelId) và có kênh ticket tiếng Anh riêng, tự động sync luôn EN!
-  if (!targetChannelId && data.channels?.ticketEnChannelId && data.channels.ticketEnChannelId !== ticketChannelId) {
-    await syncTicketChannel(data.channels.ticketEnChannelId, 'en');
+  // 3. Tự động xóa kênh ticket tiếng Anh thừa nếu còn tồn tại
+  const enChannelId = data.channels?.ticketEnChannelId;
+  if (enChannelId && enChannelId !== ticketChannelId) {
+    const enChan = await client.channels.fetch(enChannelId).catch(() => null);
+    if (enChan) {
+      await enChan.delete('Xóa kênh ticket tiếng Anh riêng biệt, chuyển sang panel song ngữ tại kênh chính').catch(() => {});
+      console.log(`🗑️ Đã xóa kênh ticket thừa: #${enChan.name}`);
+    }
+    delete data.channels.ticketEnChannelId;
+    const menuMod = require('./menuData');
+    menuMod.saveData(data);
   }
 }
 
@@ -1198,51 +1177,63 @@ async function syncTicketChannel(targetChannelId = null, targetLang = null) {
 // ----------- Events -----------
 //
 
+// Utility: check if user is staff (an toàn khi tương tác trong DM)
+async function isStaffMember(i) {
+  if (!i.guild) return false;
+  const staffRoleId = process.env.STAFF_ROLE_ID;
+  try {
+    const member = await i.guild.members.fetch(i.user.id).catch(() => null);
+    if (!member) return false;
+    return member.permissions.has(PermissionsBitField.Flags.ManageGuild) ||
+           (staffRoleId && member.roles.cache.has(staffRoleId));
+  } catch (_) {
+    return false;
+  }
+}
+
+// Utility: check if user is staff or assigned seller for ticket
+async function canManageTicket(i, order = null) {
+  if (await isStaffMember(i)) return true;
+  if (!i.guild) return false;
+  try {
+    const member = await i.guild.members.fetch(i.user.id).catch(() => null);
+    if (!member) return false;
+    if (member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+        member.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
+        member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+      return true;
+    }
+  } catch (_) {}
+
+  if (order) {
+    try {
+      const snap = typeof order.planSnapshotJson === 'string' ? JSON.parse(order.planSnapshotJson || '{}') : (order.planSnapshotJson || {});
+      if (Array.isArray(snap.handlers) && snap.handlers.includes(i.user.id)) return true;
+      if (snap.sellerId === i.user.id) return true;
+    } catch (_) {}
+  }
+  return false;
+}
+
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
   await seedCatalog();
   console.log('Catalog seeded ✅');
   await syncMenuChannel();
   await syncTicketChannel();
+  startExpiryReminderScheduler();
+  console.log('4AM Discord Bot is ready! 🚀');
 });
 
 
 client.on('interactionCreate', async (i) => {
-  // --- Role Assignment: Bilingual Selection (Mô hình 1) ---
+  try {
+  // --- Deprecated Language Role Buttons (No longer required) ---
   if (i.isButton() && (i.customId === 'role_lang_vi' || i.customId === 'role_lang_en')) {
-    await i.deferReply({ ephemeral: true });
-    const isEnChoice = i.customId === 'role_lang_en';
-    const data = getMenuData();
-    const guild = i.guild || await client.guilds.fetch(process.env.GUILD_ID);
-    const member = await guild.members.fetch(i.user.id).catch(() => null);
-    if (!member) {
-      return i.editReply({ content: isEnChoice ? '❌ Could not find member information.' : '❌ Không tìm thấy thông tin thành viên.' });
-    }
-
-    const roleViId = data.channels?.roleViId || data.bilingualRoles?.vi || guild.roles.cache.find(r => r.name === 'Tiếng Việt')?.id;
-    const roleEnId = data.channels?.roleEnId || data.bilingualRoles?.en || guild.roles.cache.find(r => r.name === 'English')?.id;
-
-    if (isEnChoice) {
-      if (roleViId && member.roles.cache.has(roleViId)) {
-        await member.roles.remove(roleViId).catch(() => {});
-      }
-      if (roleEnId) {
-        await member.roles.add(roleEnId).catch(() => {});
-      }
-      return i.editReply({
-        content: '🇬🇧 **Language set to English!**\nYou now have access to the **─── 🇬🇧 ENGLISH ZONE ───** channels. Enjoy shopping!'
-      });
-    } else {
-      if (roleEnId && member.roles.cache.has(roleEnId)) {
-        await member.roles.remove(roleEnId).catch(() => {});
-      }
-      if (roleViId) {
-        await member.roles.add(roleViId).catch(() => {});
-      }
-      return i.editReply({
-        content: '🇻🇳 **Đã chuyển sang Tiếng Việt!**\nBạn đã mở khóa toàn bộ danh mục **─── 🇻🇳 TIẾNG VIỆT ───**. Chúc bạn mua sắm vui vẻ!'
-      });
-    }
+    return i.reply({
+      content: 'ℹ️ **Server đã mở toàn bộ kênh cho tất cả mọi người!** Bạn không cần phải chọn role ngôn ngữ nữa.',
+      ephemeral: true
+    });
   }
 
   // --- Switch Menu Language (VI / EN) ---
@@ -1250,6 +1241,14 @@ client.on('interactionCreate', async (i) => {
     const newLang = i.customId.split('|')[1] || 'vi';
     const menuMsg = buildMenuMessage(newLang);
     await i.update(menuMsg).catch(() => {});
+    return;
+  }
+
+  // --- Switch Ticket Language (VI / EN) ---
+  if (i.isButton() && i.customId.startsWith('switch_ticket_lang|')) {
+    const newLang = i.customId.split('|')[1] || 'vi';
+    const ticketMsg = buildTicketMessage(newLang);
+    await i.update(ticketMsg).catch(() => {});
     return;
   }
 
@@ -1266,9 +1265,45 @@ client.on('interactionCreate', async (i) => {
     }
 
     const items = (isEn && cat.itemsEn && cat.itemsEn.length) ? cat.itemsEn : (cat.items || []);
-    const itemsList = items.map(item => `• ${item}`).join('\n');
-    const catTitle = isEn ? (cat.titleEn || `Price List - ${cat.labelEn || cat.label}`) : (cat.title || `Bảng Giá ${cat.label}`);
-    const catSubtitle = isEn ? (cat.subtitleEn || (cat.labelEn || cat.label).toUpperCase() + ':') : (cat.subtitle || cat.label.toUpperCase() + ':');
+    
+    const formatPackageItemBox = (rawList) => {
+      if (!Array.isArray(rawList) || rawList.length === 0) return '';
+      const parsed = rawList.map(item => {
+        const raw = String(item || '').trim().replace(/^•\s*/, '');
+        if (raw.includes('|')) {
+          const parts = raw.split('|').map(s => s.trim());
+          return { name: parts[0], price: parts.slice(1).join(' | ') };
+        }
+        return { name: raw, price: '' };
+      });
+
+      const maxTotalLen = Math.max(...parsed.map(p => (p.name + p.price).length));
+
+      if (maxTotalLen <= 55) {
+        const maxNameLen = Math.max(...parsed.map(p => p.name.length));
+        const maxPriceLen = Math.max(...parsed.map(p => p.price.length));
+        return parsed.map(p => {
+          if (!p.price) return `• \` ${p.name} \``;
+          const nameCol = p.name.padEnd(maxNameLen);
+          const priceCol = p.price.padStart(maxPriceLen);
+          return `• \` ${nameCol}  │  ${priceCol} \``;
+        }).join('\n');
+      }
+
+      return parsed.map(p => {
+        if (!p.price) return `• \` ${p.name} \``;
+        return `• \` ${p.name} \`\n> ➜ **${isEn ? 'Price' : 'Giá'}:** \`${p.price}\``;
+      }).join('\n');
+    };
+
+    const itemsList = formatPackageItemBox(items);
+    const baseTitle = isEn ? (cat.titleEn || `Price List - ${cat.labelEn || cat.label}`) : (cat.title || `Bảng Giá ${cat.label}`);
+    const catTitle = (cat.emoji && !baseTitle.includes(cat.emoji)) ? `${cat.emoji} ${baseTitle}` : baseTitle;
+    const rawSubtitle = isEn ? (cat.subtitleEn || cat.subtitle || '') : (cat.subtitle || '');
+    let noteLine = '';
+    if (rawSubtitle && rawSubtitle.trim()) {
+      noteLine = `-# ${rawSubtitle.trim()}`;
+    }
 
     const { seller, handlers } = getSellerForCategory(selectedKey);
     const allHandlerIds = (handlers && handlers.length > 0) ? handlers : (seller?.discordId ? [seller.discordId] : []);
@@ -1282,7 +1317,7 @@ client.on('interactionCreate', async (i) => {
     }
 
     const descParts = [
-      `${cat.emoji ? `${cat.emoji} ` : ''}**${catSubtitle}**`,
+      noteLine,
       handlerLine,
       itemsList
     ].filter(Boolean);
@@ -1292,8 +1327,8 @@ client.on('interactionCreate', async (i) => {
       .setDescription(descParts.join('\n\n'))
       .setColor(cat.color || 0x5865F2);
 
-    if (cat.bannerUrl) {
-      catEmbed.setImage(cat.bannerUrl);
+    if (cat.bannerUrl && cat.bannerUrl.trim() && !cat.bannerUrl.includes('imgur.com/W29F1cT') && !cat.bannerUrl.includes('imgur.com/rN9xV4v')) {
+      catEmbed.setImage(cat.bannerUrl.trim());
     }
 
     const buyButton = new ButtonBuilder()
@@ -1365,8 +1400,8 @@ client.on('interactionCreate', async (i) => {
       }
     }
 
-    const cleanLabel = ((isEn && cat.labelEn) ? cat.labelEn : (cat.label || 'service')).toLowerCase().replace(/[^a-z0-9]/g, '-');
-    const channelName = `ticket-${cleanLabel}-${orderDraftNo}`.toLowerCase();
+    const cleanKey = String(categoryKey).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const channelName = `ticket-${cleanKey}-${orderDraftNo}`.toLowerCase();
     const ticketChannel = await guild.channels.create({
       name: channelName,
       type: ChannelType.GuildText,
@@ -1376,6 +1411,42 @@ client.on('interactionCreate', async (i) => {
     });
 
     if (!isStaff) markTicketOpened(i.user.id);
+
+    // Auto-record order in SQLite Database & attach ticket
+    let dbOrder = null;
+    try {
+      const dbUser = await ensureUser(i.user.id, null, i.user.globalName || i.user.username, null);
+      const sku = `CAT_${categoryKey.toUpperCase()}`;
+      const dbProduct = await findOrCreateProduct({
+        type: 'STORE_CATEGORY',
+        name: cat.label || categoryKey,
+        sku,
+        specJson: JSON.stringify(cat),
+        priceCents: 0,
+        currency: 'VNĐ'
+      });
+      const planSnapshot = {
+        categoryKey,
+        categoryLabel: cat.label,
+        categoryLabelEn: cat.labelEn,
+        sellerId: seller?.id || 'shop_common',
+        sellerName: seller?.username ? `@${seller.username}` : (seller?.name || 'Shop Admin'),
+        handlers: allHandlerIds,
+        accountIndex: accountIndex || 'all',
+        createdAt: new Date().toISOString()
+      };
+      dbOrder = await createOrder({
+        orderNo: orderDraftNo,
+        userId: dbUser.id,
+        productId: dbProduct.id,
+        planSnapshotJson: JSON.stringify(planSnapshot),
+        amountCents: 0,
+        currency: 'VNĐ'
+      });
+      await attachTicket(dbOrder.id, guild.id, ticketChannel.id, dbUser.id);
+    } catch (orderErr) {
+      console.error('Lỗi khi tự động tạo đơn hàng trong DB:', orderErr);
+    }
 
     const paymentBlock = buildPaymentBlock(seller, orderDraftNo, accountIndex, lang);
 
@@ -1406,8 +1477,8 @@ client.on('interactionCreate', async (i) => {
         isEn ? `📦 **Product of interest:** **${cat.labelEn || cat.label}**` : `📦 **Dịch vụ quan tâm:** **${cat.label}**`,
         paymentBlock,
         isEn
-          ? '💬 *Please specify the package or plan you want (e.g., duration, quantity) in this channel so staff/seller can assist you right away!*'
-          : '💬 *Vui lòng nhắn rõ gói bạn muốn mua (ví dụ thời hạn, số lượng) tại kênh này để Staff/Seller hỗ trợ nhanh nhất nhé!*'
+          ? '👉 **Please choose which package you want to buy (or choose "Need consultation") from the menu below:**'
+          : '👉 **Vui lòng chọn loại gói bạn muốn mua (hoặc chọn "Cần tư vấn") ở menu bên dưới:**'
       ].filter(Boolean).join('\n'))
       .setColor(cat.color || 0x00C2A8)
       .setFooter({ text: isEn ? '4AM Shop • 24/7 Support' : '4AM Shop • Hỗ trợ 24/7' })
@@ -1436,20 +1507,33 @@ client.on('interactionCreate', async (i) => {
         .setStyle(ButtonStyle.Secondary)
     );
 
+    const staffActionRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`quick_staff_complete|${orderDraftNo}`)
+        .setLabel(isEn ? '✅ Complete Order' : '✅ Chốt & Hoàn Thành')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`quick_staff_cancel|${orderDraftNo}`)
+        .setLabel(isEn ? '❌ Cancel Order' : '❌ Hủy Đơn Hàng')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
     const mentions = [`<@${i.user.id}>`];
     for (const hId of allHandlerIds) {
       if (hId && hId !== i.user.id && !mentions.includes(`<@${hId}>`)) {
         mentions.push(`<@${hId}>`);
       }
     }
-    if (staffRoleId && !mentions.includes(`<@&${staffRoleId}>`)) {
+    const shouldPingStaff = cat.pingStaff === true || (allHandlerIds.length === 0);
+    if (shouldPingStaff && staffRoleId && !mentions.includes(`<@&${staffRoleId}>`)) {
       mentions.push(`<@&${staffRoleId}>`);
     }
 
+    const itemPrompt = buildCategoryItemPrompt(cat, categoryKey, lang, orderDraftNo);
     await ticketChannel.send({
       content: mentions.join(' '),
       embeds: [welcomeEmbed],
-      components: [ticketButtons]
+      components: [itemPrompt.row, ticketButtons, staffActionRow]
     });
 
     return i.editReply({ content: isEn ? `✅ Created purchase ticket for **${cat.labelEn || cat.label}** at: <#${ticketChannel.id}>` : `✅ Đã tạo Ticket hỗ trợ mua **${cat.label}** tại: <#${ticketChannel.id}>` });
@@ -1521,6 +1605,39 @@ client.on('interactionCreate', async (i) => {
 
     if (!isStaff) markTicketOpened(i.user.id);
 
+    // Auto-record support order in SQLite Database & attach ticket
+    let dbOrder = null;
+    try {
+      const dbUser = await ensureUser(i.user.id, null, i.user.globalName || i.user.username, null);
+      const dbProduct = await findOrCreateProduct({
+        type: 'SUPPORT_TICKET',
+        name: isEn ? 'General Support' : 'Hỗ Trợ Khách Hàng',
+        sku: 'SUPPORT_GENERAL',
+        specJson: JSON.stringify({ type: 'support', lang }),
+        priceCents: 0,
+        currency: 'VNĐ'
+      });
+      const planSnapshot = {
+        categoryKey: 'support',
+        categoryLabel: isEn ? 'Support Ticket' : 'Ticket Hỗ Trợ',
+        sellerId: defaultSeller?.id || 'admin',
+        sellerName: defaultSeller?.username ? `@${defaultSeller.username}` : (defaultSeller?.name || 'Shop Admin'),
+        handlers: sellerDiscordId ? [sellerDiscordId] : [],
+        createdAt: new Date().toISOString()
+      };
+      dbOrder = await createOrder({
+        orderNo: orderDraftNo,
+        userId: dbUser.id,
+        productId: dbProduct.id,
+        planSnapshotJson: JSON.stringify(planSnapshot),
+        amountCents: 0,
+        currency: 'VNĐ'
+      });
+      await attachTicket(dbOrder.id, guild.id, ticketChannel.id, dbUser.id);
+    } catch (orderErr) {
+      console.error('Lỗi khi tự động tạo ticket support trong DB:', orderErr);
+    }
+
     const paymentBlock = buildPaymentBlock(defaultSeller, orderDraftNo, 'all', lang);
 
     const welcomeTitle = (langConf.welcomeTitle || (isEn ? '🎟️ SUPPORT TICKET — {storeName}' : '🎟️ TICKET HỖ TRỢ — {storeName}')).replace(/\{storeName\}/g, storeName);
@@ -1552,11 +1669,22 @@ client.on('interactionCreate', async (i) => {
     const ticketButtons = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('close_simple_ticket')
-        .setLabel('🔒 Đóng Ticket')
+        .setLabel(isEn ? '🔒 Close Ticket' : '🔒 Đóng Ticket')
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
         .setCustomId(`show_seller_selector|${orderDraftNo}`)
-        .setLabel('💳 Đổi STK người bán khác')
+        .setLabel(isEn ? '💳 Switch Bank Account' : '💳 Đổi STK người bán khác')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    const staffActionRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`quick_staff_complete|${orderDraftNo}`)
+        .setLabel(isEn ? '✅ Complete Order' : '✅ Chốt & Hoàn Thành')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`quick_staff_cancel|${orderDraftNo}`)
+        .setLabel(isEn ? '❌ Cancel Order' : '❌ Hủy Đơn Hàng')
         .setStyle(ButtonStyle.Secondary)
     );
 
@@ -1568,10 +1696,13 @@ client.on('interactionCreate', async (i) => {
       generalMentions.push(`<@&${staffRoleId}>`);
     }
 
+    const generalPrompt = buildGeneralTicketPrompt(data.categories || {}, lang, orderDraftNo);
+    const comps = generalPrompt?.row ? [generalPrompt.row, ticketButtons, staffActionRow] : [ticketButtons, staffActionRow];
+
     await ticketChannel.send({
       content: generalMentions.join(' '),
       embeds: [welcomeEmbed],
-      components: [ticketButtons]
+      components: comps
     });
 
     return i.editReply({ content: `✅ Đã tạo Ticket hỗ trợ tại: <#${ticketChannel.id}>` });
@@ -1642,13 +1773,630 @@ client.on('interactionCreate', async (i) => {
     return i.reply({ embeds: [embed], ephemeral: true });
   }
 
-  // --- Close Simple Ticket ---
-  if (i.isButton() && i.customId === 'close_simple_ticket') {
+  // --- Customer Selected Variant / Package or Consultation in Ticket ---
+  if (i.isStringSelectMenu() && i.customId.startsWith('select_ticket_item|')) {
+    const parts = i.customId.split('|');
+    const orderDraftNo = parts[1];
+    const categoryKey = parts[2];
+    const lang = parts[3] || 'vi';
+    const isEn = lang === 'en';
+    const selectedVal = i.values[0];
+
+    const data = getMenuData();
+    const cat = data.categories?.[categoryKey] || { label: 'Sản phẩm', color: 0x00C2A8 };
+    const catName = (isEn && cat.labelEn) ? cat.labelEn : (cat.label || categoryKey);
+    const { seller, handlers } = getSellerForCategory(categoryKey);
+    const staffRoleId = process.env.STAFF_ROLE_ID;
+
+    // Find order in DB if exists
+    const order = await prisma.order.findFirst({
+      where: { orderNo: orderDraftNo },
+      include: { user: true, product: true }
+    });
+
+    const isStaff = await canManageTicket(i, order);
+
+    if (order && order.user?.discordId && order.user.discordId !== i.user.id && !isStaff) {
+      return i.reply({
+        content: isEn ? '❌ Only the customer who opened this ticket or staff can select options.' : '❌ Chỉ người tạo ticket hoặc nhân viên phụ trách mới có thể thao tác chọn gói.',
+        ephemeral: true
+      });
+    }
+
+    const allHandlerIds = (handlers && handlers.length > 0) ? handlers : (seller?.discordId ? [seller.discordId] : []);
+    const pings = [];
+    allHandlerIds.forEach(hId => {
+      if (hId && !pings.includes(`<@${hId}>`)) pings.push(`<@${hId}>`);
+    });
+    const shouldPingStaff = cat.pingStaff === true || (allHandlerIds.length === 0);
+    if (shouldPingStaff && staffRoleId && !pings.includes(`<@&${staffRoleId}>`)) {
+      pings.push(`<@&${staffRoleId}>`);
+    }
+    const pingStr = pings.length ? pings.join(' ') : (staffRoleId ? `<@&${staffRoleId}>` : 'Nhân viên hỗ trợ');
+
+    if (selectedVal === 'consult_seller') {
+      const updatedPrompt = buildCategoryItemPrompt(cat, categoryKey, lang, orderDraftNo, 'consult_seller');
+      const consultEmbed = new EmbedBuilder()
+        .setTitle(isEn ? '💬 NEED CONSULTATION & DISCUSS WITH SELLER' : '💬 YÊU CẦU TƯ VẤN & BÀN BẠC VỚI NGƯỜI BÁN')
+        .setDescription([
+          isEn
+            ? `Customer <@${i.user.id}> has selected: **Need consultation & discuss with seller** regarding **${catName}**.`
+            : `Khách hàng <@${i.user.id}> đã chọn: **Cần tư vấn và bàn bạc với người bán** về **${catName}**.`,
+          '',
+          isEn
+            ? `💬 <@${i.user.id}>, please leave your inquiries or details below so our staff can assist you right away!`
+            : `💬 <@${i.user.id}> vui lòng để lại câu hỏi, thời hạn hoặc yêu cầu cụ thể bên dưới để người bán hỗ trợ bạn ngay nhé!`,
+          '',
+          isEn ? `*(You can re-select a package from the menu below if you change your mind)*` : `*(Bạn có thể chọn lại gói trong menu bên dưới nếu muốn đổi)*`
+        ].join('\n'))
+        .setColor(0xF1C40F)
+        .setTimestamp();
+
+      const ticketButtons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('close_simple_ticket').setLabel(isEn ? '🔒 Close Ticket' : '🔒 Đóng Ticket').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(`show_seller_selector|${orderDraftNo}`).setLabel(isEn ? '💳 Switch Bank Account' : '💳 Đổi STK người bán khác').setStyle(ButtonStyle.Secondary)
+      );
+      const staffActionRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`quick_staff_complete|${orderDraftNo}`).setLabel(isEn ? '✅ Complete Order' : '✅ Chốt & Hoàn Thành').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`quick_staff_cancel|${orderDraftNo}`).setLabel(isEn ? '❌ Cancel Order' : '❌ Hủy Đơn Hàng').setStyle(ButtonStyle.Secondary)
+      );
+
+      await i.update({
+        components: [updatedPrompt.row, ticketButtons, staffActionRow]
+      });
+
+      await i.channel.send({
+        content: `🔔 ${pingStr}: Khách hàng <@${i.user.id}> đang **cần tư vấn và bàn bạc với người bán** về **${catName}**! Vui lòng vào hỗ trợ khách nhé!`,
+        embeds: [consultEmbed]
+      });
+
+      if (order) {
+        try {
+          const snapshot = typeof order.planSnapshotJson === 'string' ? JSON.parse(order.planSnapshotJson || '{}') : (order.planSnapshotJson || {});
+          snapshot.selectedItem = isEn ? 'Need consultation & discuss with seller' : 'Cần tư vấn và bàn bạc với người bán';
+          snapshot.consultationRequested = true;
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { planSnapshotJson: JSON.stringify(snapshot) }
+          });
+        } catch (err) {
+          console.error('Lỗi cập nhật order snapshot (consult):', err);
+        }
+      }
+      return;
+    }
+
+    if (selectedVal.startsWith('item_')) {
+      const idx = parseInt(selectedVal.replace('item_', ''), 10);
+      const rawList = (isEn && cat.itemsEn && cat.itemsEn.length) ? cat.itemsEn : (cat.items || []);
+      const itemRaw = rawList[idx] || '';
+      const cleanRaw = String(itemRaw).trim().replace(/^•\s*/, '');
+      let itemName = cleanRaw;
+      let itemPrice = '';
+      if (cleanRaw.includes('|')) {
+        const parts = cleanRaw.split('|').map(s => s.trim());
+        itemName = parts[0];
+        itemPrice = parts.slice(1).join(' | ');
+      }
+
+      const amountCents = parsePrice(itemPrice);
+
+      const updatedPrompt = buildCategoryItemPrompt(cat, categoryKey, lang, orderDraftNo, selectedVal);
+      const selectedEmbed = new EmbedBuilder()
+        .setTitle(isEn ? `✅ SELECTED: ${itemName.toUpperCase()}` : `✅ ĐÃ CHỌN: ${itemName.toUpperCase()}`)
+        .setDescription([
+          isEn ? `Customer <@${i.user.id}> selected a package:` : `Khách hàng <@${i.user.id}> đã chọn loại sản phẩm:`,
+          '',
+          isEn ? `📦 **Product:** **${catName}**` : `📦 **Sản phẩm:** **${catName}**`,
+          isEn ? `🏷️ **Package:** **${itemName}**` : `🏷️ **Loại gói:** **${itemName}**`,
+          isEn ? `💰 **Price:** **${itemPrice || 'Contact'}**` : `💰 **Đơn giá:** **${itemPrice || 'Liên hệ'}**`,
+          '',
+          isEn
+            ? `📌 Staff/Seller has been notified and will assist you shortly!`
+            : `📌 Nhân viên/người bán đã nhận được lựa chọn và sẽ hỗ trợ giao dịch cho bạn ngay!`,
+          '',
+          isEn ? `*(You can re-select from the menu above if you want to switch to another plan)*` : `*(Bạn có thể chọn lại gói khác trong menu ở trên nếu muốn đổi)*`
+        ].join('\n'))
+        .setColor(0x2ECC71)
+        .setTimestamp();
+
+      const ticketButtons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('close_simple_ticket').setLabel(isEn ? '🔒 Close Ticket' : '🔒 Đóng Ticket').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(`show_seller_selector|${orderDraftNo}`).setLabel(isEn ? '💳 Switch Bank Account' : '💳 Đổi STK người bán khác').setStyle(ButtonStyle.Secondary)
+      );
+      const staffActionRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`quick_staff_complete|${orderDraftNo}`).setLabel(isEn ? '✅ Complete Order' : '✅ Chốt & Hoàn Thành').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`quick_staff_cancel|${orderDraftNo}`).setLabel(isEn ? '❌ Cancel Order' : '❌ Hủy Đơn Hàng').setStyle(ButtonStyle.Secondary)
+      );
+
+      await i.update({
+        components: [updatedPrompt.row, ticketButtons, staffActionRow]
+      });
+
+      await i.channel.send({
+        content: `📢 ${pingStr}: Khách hàng <@${i.user.id}> muốn mua **${catName}** — gói **${itemName}** (${itemPrice || ''}). Vui lòng kiểm tra và hỗ trợ khách hàng!`,
+        embeds: [selectedEmbed]
+      });
+
+      if (order) {
+        try {
+          const snapshot = typeof order.planSnapshotJson === 'string' ? JSON.parse(order.planSnapshotJson || '{}') : (order.planSnapshotJson || {});
+          snapshot.selectedItem = itemName;
+          snapshot.itemPrice = itemPrice;
+          snapshot.consultationRequested = false;
+
+          const updateData = { planSnapshotJson: JSON.stringify(snapshot) };
+          if (amountCents > 0) {
+            updateData.amountCents = amountCents;
+          }
+          await prisma.order.update({
+            where: { id: order.id },
+            data: updateData
+          });
+        } catch (err) {
+          console.error('Lỗi cập nhật order snapshot (item):', err);
+        }
+      }
+      return;
+    }
+  }
+
+  // --- Customer Selected Category or Consultation in General Support Ticket ---
+  if (i.isStringSelectMenu() && i.customId.startsWith('select_general_ticket_category|')) {
+    const parts = i.customId.split('|');
+    const orderDraftNo = parts[1];
+    const lang = parts[2] || 'vi';
+    const isEn = lang === 'en';
+    const selectedVal = i.values[0];
+
+    const data = getMenuData();
+    const staffRoleId = process.env.STAFF_ROLE_ID;
+
+    const order = await prisma.order.findFirst({
+      where: { orderNo: orderDraftNo },
+      include: { user: true, product: true }
+    });
+
+    const isStaff = await canManageTicket(i, order);
+
+    if (order && order.user?.discordId && order.user.discordId !== i.user.id && !isStaff) {
+      return i.reply({
+        content: isEn ? '❌ Only the customer who opened this ticket or staff can select options.' : '❌ Chỉ người tạo ticket hoặc nhân viên phụ trách mới có thể thao tác.',
+        ephemeral: true
+      });
+    }
+
+    const ticketButtons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('close_simple_ticket').setLabel(isEn ? '🔒 Close Ticket' : '🔒 Đóng Ticket').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`show_seller_selector|${orderDraftNo}`).setLabel(isEn ? '💳 Switch Bank Account' : '💳 Đổi STK người bán khác').setStyle(ButtonStyle.Secondary)
+    );
+    const staffActionRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`quick_staff_complete|${orderDraftNo}`).setLabel(isEn ? '✅ Complete Order' : '✅ Chốt & Hoàn Thành').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`quick_staff_cancel|${orderDraftNo}`).setLabel(isEn ? '❌ Cancel Order' : '❌ Hủy Đơn Hàng').setStyle(ButtonStyle.Secondary)
+    );
+
+    if (selectedVal === 'consult_seller') {
+      const consultEmbed = new EmbedBuilder()
+        .setTitle(isEn ? '💬 NEED CONSULTATION & DISCUSS WITH SELLER' : '💬 YÊU CẦU TƯ VẤN & BÀN BẠC VỚI NGƯỜI BÁN')
+        .setDescription([
+          isEn
+            ? `Customer <@${i.user.id}> has selected: **Need consultation & discuss with seller**.`
+            : `Khách hàng <@${i.user.id}> đã chọn: **Cần tư vấn và bàn bạc với người bán**.`,
+          '',
+          isEn
+            ? `💬 <@${i.user.id}>, please leave your inquiries or details below so our staff can assist you right away!`
+            : `💬 <@${i.user.id}> vui lòng để lại câu hỏi hoặc nội dung bạn cần hỗ trợ bên dưới để nhân viên phục vụ nhé!`,
+          '',
+          isEn ? `*(You can re-select below if you wish to browse a product)*` : `*(Bạn có thể chọn lại sản phẩm khác ở menu bên dưới)*`
+        ].join('\n'))
+        .setColor(0xF1C40F)
+        .setTimestamp();
+
+      const generalPrompt = buildGeneralTicketPrompt(data.categories || {}, lang, orderDraftNo, 'consult_seller');
+      await i.update({
+        components: [generalPrompt.row, ticketButtons, staffActionRow]
+      });
+
+      await i.channel.send({
+        content: `🔔 ${staffRoleId ? `<@&${staffRoleId}>` : 'Staff'}: Khách hàng <@${i.user.id}> đang **cần tư vấn và bàn bạc với người bán**! Vui lòng vào hỗ trợ khách nhé!`,
+        embeds: [consultEmbed]
+      });
+
+      if (order) {
+        try {
+          const snapshot = typeof order.planSnapshotJson === 'string' ? JSON.parse(order.planSnapshotJson || '{}') : (order.planSnapshotJson || {});
+          snapshot.selectedItem = 'Cần tư vấn và bàn bạc với người bán';
+          snapshot.consultationRequested = true;
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { planSnapshotJson: JSON.stringify(snapshot) }
+          });
+        } catch (_) {}
+      }
+      return;
+    }
+
+    // A category was selected!
+    const cat = data.categories?.[selectedVal];
+    if (!cat) {
+      return i.reply({ content: isEn ? '❌ Category not found.' : '❌ Không tìm thấy danh mục này.', ephemeral: true });
+    }
+
+    // Transform into the item selector for that category!
+    const itemPrompt = buildCategoryItemPrompt(cat, selectedVal, lang, orderDraftNo);
+    await i.update({
+      components: [itemPrompt.row, ticketButtons, staffActionRow]
+    });
+
+    // Also update order planSnapshot with category info
+    if (order) {
+      try {
+        const { seller, handlers } = getSellerForCategory(selectedVal);
+        const snapshot = typeof order.planSnapshotJson === 'string' ? JSON.parse(order.planSnapshotJson || '{}') : (order.planSnapshotJson || {});
+        snapshot.categoryKey = selectedVal;
+        snapshot.categoryLabel = cat.label;
+        snapshot.categoryLabelEn = cat.labelEn;
+        if (seller) {
+          snapshot.sellerId = seller.id || selectedVal;
+          snapshot.sellerName = seller.username ? `@${seller.username}` : (seller.name || 'Shop Admin');
+        }
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { planSnapshotJson: JSON.stringify(snapshot) }
+        });
+      } catch (_) {}
+    }
+  }
+
+  // --- Quick Staff Complete Button (Shows Modal for Amount & Delivery Note) ---
+  if (i.isButton() && i.customId.startsWith('quick_staff_complete|')) {
+    const orderNo = i.customId.split('|')[1];
+    const order = await prisma.order.findUnique({
+      where: { orderNo },
+      include: { user: true, product: true, ticket: true }
+    });
+    if (!order) {
+      return i.reply({ content: '❌ Không tìm thấy thông tin đơn hàng trong hệ thống.', ephemeral: true });
+    }
+    const isAllowed = await canManageTicket(i, order);
+    if (!isAllowed) {
+      return i.reply({ content: '⚠️ Chỉ Nhân viên (Staff) hoặc Người bán phụ trách mới có quyền chốt đơn này!', ephemeral: true });
+    }
+
+    let defaultPrice = order.amountCents > 0 ? order.amountCents : (order.product?.priceCents || 0);
+    if (defaultPrice === 0) {
+      let snap = {};
+      try { snap = JSON.parse(order.planSnapshotJson || '{}'); } catch (_) {}
+      if (snap.categoryKey) {
+        const mData = menuData.loadData ? menuData.loadData() : menuData;
+        const cat = mData?.categories?.[snap.categoryKey];
+        if (cat && Array.isArray(cat.items)) {
+          for (const item of cat.items) {
+            if (typeof item === 'string') {
+              const match = item.match(/\|\s*([\d\.,]+)\s*(?:k|vnđ|vnd)/i) || item.match(/([\d\.,]+)\s*(?:k|vnđ|vnd)/i);
+              if (match) {
+                const raw = match[1].replace(/[\.,]/g, '');
+                const val = parseInt(raw, 10);
+                if (!isNaN(val) && val > 0) {
+                  defaultPrice = val;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const modal = new ModalBuilder()
+      .setCustomId(`modal_complete_order|${orderNo}`)
+      .setTitle(`Chốt Đơn Hàng #${orderNo}`.slice(0, 45));
+
+    const amountInput = new TextInputBuilder()
+      .setCustomId('complete_amount')
+      .setLabel('Số tiền thanh toán thực tế (VNĐ)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Ví dụ: 65000 (chỉ điền số)')
+      .setValue(defaultPrice > 0 ? String(defaultPrice) : '')
+      .setRequired(true);
+
+    const noteInput = new TextInputBuilder()
+      .setCustomId('complete_note')
+      .setLabel('Ghi chú giao hàng / Tên gói đã chốt')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Ví dụ: Đã giao acc Netflix 1 tháng profile 2, MB Bank')
+      .setRequired(false);
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(amountInput),
+      new ActionRowBuilder().addComponents(noteInput)
+    );
+
+    return i.showModal(modal);
+  }
+
+  // --- Modal Submit: Complete Order ---
+  if (i.isModalSubmit() && i.customId.startsWith('modal_complete_order|')) {
+    const orderNo = i.customId.split('|')[1];
+    const rawAmount = i.fields.getTextInputValue('complete_amount')?.trim() || '';
+    const note = i.fields.getTextInputValue('complete_note')?.trim() || '';
+
+    const cleanAmount = parseInt(rawAmount.replace(/\D/g, ''), 10);
+    if (isNaN(cleanAmount) || cleanAmount < 0) {
+      return i.reply({ content: '⚠️ Vui lòng nhập số tiền VNĐ hợp lệ (ví dụ: 65000)!', ephemeral: true });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { orderNo },
+      include: { user: true, product: true, ticket: true }
+    });
+    if (!order) {
+      return i.reply({ content: '❌ Không tìm thấy đơn hàng trong hệ thống.', ephemeral: true });
+    }
+
+    let snap = {};
+    try { snap = JSON.parse(order.planSnapshotJson || '{}'); } catch (_) {}
+    snap.completedBy = i.user.tag;
+    snap.completedById = i.user.id;
+    snap.completedNote = note;
+    snap.completedAt = new Date().toISOString();
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        status: 'COMPLETED',
+        amountCents: cleanAmount,
+        planSnapshotJson: JSON.stringify(snap)
+      }
+    });
+
+    const receiptEmbed = new EmbedBuilder()
+      .setTitle(`🎉 XÁC NHẬN HOÀN THÀNH ĐƠN HÀNG #${orderNo}`)
+      .setColor(0x10B981)
+      .setDescription([
+        `Đơn hàng **#${orderNo}** đã được nhân viên <@${i.user.id}> chốt thành công và lưu vào Web Control Panel!`,
+        '',
+        `👤 **Khách hàng:** <@${order.user.discordId}>`,
+        `💰 **Số tiền thanh toán:** **${cleanAmount.toLocaleString('vi-VN')} VNĐ**`,
+        note ? `📝 **Ghi chú bàn giao:** ${note}` : '',
+        `⏰ **Thời gian:** <t:${Math.floor(Date.now() / 1000)}:F>`,
+        '',
+        '🌟 *Cảm ơn bạn đã tin tưởng mua hàng tại 4AM STORE! Đơn hàng đã được lưu trữ an toàn.*'
+      ].filter(Boolean).join('\n'))
+      .setFooter({ text: '4AM STORE • Quản lý đơn hàng tự động' })
+      .setTimestamp();
+
+    const closeRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('close_simple_ticket')
+        .setLabel('🔒 Đóng Ticket Ngay')
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    await i.reply({ embeds: [receiptEmbed], components: [closeRow] });
+
+    // Send DM to customer if possible
+    try {
+      const customer = await client.users.fetch(order.user.discordId).catch(() => null);
+      if (customer) {
+        const dmEmbed = new EmbedBuilder()
+          .setTitle(`🎉 ĐƠN HÀNG #${orderNo} HOÀN THÀNH`)
+          .setColor(0x10B981)
+          .setDescription([
+            `Cảm ơn bạn đã mua hàng tại **4AM STORE**!`,
+            `Đơn hàng **#${orderNo}** của bạn đã được hoàn tất thành công.`,
+            '',
+            `💰 **Số tiền:** **${cleanAmount.toLocaleString('vi-VN')} VNĐ**`,
+            note ? `📝 **Ghi chú:** ${note}` : '',
+            '',
+            'Chúc bạn trải nghiệm dịch vụ vui vẻ! Nếu cần hỗ trợ thêm, hãy mở lại ticket tại server nhé.'
+          ].filter(Boolean).join('\n'))
+          .setTimestamp();
+        await customer.send({ embeds: [dmEmbed] }).catch(() => {});
+      }
+    } catch (_) {}
+
+    return;
+  }
+
+  // --- Quick Staff Cancel Button (1-Click Instant, No Modal) ---
+  if (i.isButton() && i.customId.startsWith('quick_staff_cancel|')) {
+    const orderNo = i.customId.split('|')[1];
+    const order = await prisma.order.findUnique({
+      where: { orderNo },
+      include: { user: true, product: true, ticket: true }
+    });
+    if (!order) {
+      return i.reply({ content: '❌ Không tìm thấy thông tin đơn hàng trong hệ thống.', ephemeral: true });
+    }
+    const isAllowed = await canManageTicket(i, order);
+    if (!isAllowed) {
+      return i.reply({ content: '⚠️ Chỉ Nhân viên (Staff) hoặc Người bán phụ trách mới có quyền hủy đơn này!', ephemeral: true });
+    }
+
+    let snap = {};
+    try { snap = JSON.parse(order.planSnapshotJson || '{}'); } catch (_) {}
+    snap.cancelledBy = i.user.tag;
+    snap.cancelledById = i.user.id;
+    snap.cancelledReason = 'Khách hủy / không chốt đơn';
+    snap.cancelledAt = new Date().toISOString();
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        status: 'CANCELLED',
+        planSnapshotJson: JSON.stringify(snap)
+      }
+    });
+
+    await prisma.ticket.updateMany({
+      where: { channelId: i.channel.id },
+      data: { status: 'CLOSED' }
+    });
+
+    const cancelEmbed = new EmbedBuilder()
+      .setTitle(`❌ ĐÃ HỦY ĐƠN HÀNG #${orderNo}`)
+      .setColor(0xEF4444)
+      .setDescription([
+        `Đơn hàng **#${orderNo}** đã được nhân viên <@${i.user.id}> đánh dấu **ĐÃ HỦY** trên hệ thống.`,
+        '',
+        `⚠️ **Trạng thái:** Khách hủy / Không mua`,
+        `🔒 **Kênh ticket sẽ tự động đóng và xóa trong 3 giây...**`
+      ].join('\n'))
+      .setFooter({ text: '4AM STORE • Quản lý đơn hàng tự động' })
+      .setTimestamp();
+
+    await i.reply({ embeds: [cancelEmbed] });
+
+    setTimeout(() => {
+      i.channel.delete().catch(e => console.error('Không thể xóa kênh ticket:', e));
+    }, 3000);
+    return;
+  }
+
+  // --- Supporting Button: Dismiss Prompt ---
+  if (i.isButton() && i.customId === 'resolve_dismiss_prompt') {
+    await i.message.delete().catch(() => {});
+    return;
+  }
+
+  // --- Supporting Button: Resolve Just Close (Staff) ---
+  if (i.isButton() && i.customId.startsWith('resolve_just_close|')) {
+    const orderNo = i.customId.split('|')[1];
+    try {
+      const order = await prisma.order.findUnique({ where: { orderNo } });
+      if (order && order.status === 'PENDING') {
+        let snap = {};
+        try { snap = JSON.parse(order.planSnapshotJson || '{}'); } catch (_) {}
+        snap.cancelledBy = i.user.tag;
+        snap.cancelledReason = 'Đóng ticket tư vấn / Không phát sinh đơn';
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { status: 'CANCELLED', planSnapshotJson: JSON.stringify(snap) }
+        });
+      }
+      await prisma.ticket.updateMany({
+        where: { channelId: i.channel.id },
+        data: { status: 'CLOSED' }
+      });
+    } catch (_) {}
+
+    await i.reply({ content: '🔒 Đã ghi nhận ticket tư vấn. Kênh sẽ được xóa trong 3 giây...' });
+    setTimeout(() => {
+      i.channel.delete().catch(e => console.error('Không thể xóa kênh ticket:', e));
+    }, 3000);
+    return;
+  }
+
+  // --- Supporting Button: Customer Confirm Close ---
+  if (i.isButton() && i.customId.startsWith('customer_confirm_close|')) {
+    const orderNo = i.customId.split('|')[1];
+    try {
+      const order = await prisma.order.findUnique({ where: { orderNo } });
+      if (order && order.status === 'PENDING') {
+        let snap = {};
+        try { snap = JSON.parse(order.planSnapshotJson || '{}'); } catch (_) {}
+        snap.cancelledBy = i.user.tag;
+        snap.cancelledReason = 'Khách tự đóng ticket khi chưa thanh toán';
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { status: 'CANCELLED', planSnapshotJson: JSON.stringify(snap) }
+        });
+      }
+      await prisma.ticket.updateMany({
+        where: { channelId: i.channel.id },
+        data: { status: 'CLOSED' }
+      });
+    } catch (_) {}
+
     await i.reply({ content: '🔒 Ticket sẽ được đóng và xóa trong 3 giây...' });
     setTimeout(() => {
       i.channel.delete().catch(e => console.error('Không thể xóa kênh ticket:', e));
     }, 3000);
     return;
+  }
+
+  // --- Main Close Simple Ticket ---
+  if (i.isButton() && i.customId === 'close_simple_ticket') {
+    const ticket = await prisma.ticket.findUnique({
+      where: { channelId: i.channel.id },
+      include: { order: true }
+    });
+    const order = ticket?.order;
+
+    // If order is already settled or not found: close directly
+    if (!order || order.status === 'COMPLETED' || order.status === 'CANCELLED' || order.status === 'PAID') {
+      try {
+        await prisma.ticket.updateMany({
+          where: { channelId: i.channel.id },
+          data: { status: 'CLOSED' }
+        });
+      } catch (_) {}
+      await i.reply({ content: '🔒 Ticket đã giải quyết xong. Kênh sẽ được xóa trong 3 giây...' });
+      setTimeout(() => {
+        i.channel.delete().catch(e => console.error('Không thể xóa kênh ticket:', e));
+      }, 3000);
+      return;
+    }
+
+    // Order is STILL PENDING!
+    const isStaff = await canManageTicket(i, order);
+
+    if (isStaff) {
+      const promptEmbed = new EmbedBuilder()
+        .setTitle(`📋 XÁC NHẬN KẾT QUẢ ĐƠN HÀNG #${order.orderNo}`)
+        .setColor(0xF59E0B)
+        .setDescription([
+          `Đơn hàng này hiện đang ở trạng thái **PENDING (Chờ xử lý)**.`,
+          `Để số liệu trên **Web Control Panel** được chính xác, vui lòng chọn kết quả trước khi đóng ticket:`,
+          '',
+          `🟢 **Chốt đơn thành công**: Khách đã mua, đã chuyển tiền và nhận hàng.`,
+          `🔴 **Khách hủy đơn**: Khách đổi ý, không mua hoặc cãi nhau/hủy bỏ.`,
+          `⚪ **Chỉ đóng ticket**: Khách vào hỏi tư vấn chung, không có đơn.`
+        ].join('\n'));
+
+      const promptRow1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`quick_staff_complete|${order.orderNo}`)
+          .setLabel('🟢 Chốt đơn thành công')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`quick_staff_cancel|${order.orderNo}`)
+          .setLabel('🔴 Khách hủy / Không mua')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      const promptRow2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`resolve_just_close|${order.orderNo}`)
+          .setLabel('⚪ Chỉ đóng ticket tư vấn')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('resolve_dismiss_prompt')
+          .setLabel('↩️ Tiếp tục giữ kênh')
+          .setStyle(ButtonStyle.Secondary)
+      );
+
+      return i.reply({ embeds: [promptEmbed], components: [promptRow1, promptRow2] });
+    } else {
+      const customerEmbed = new EmbedBuilder()
+        .setTitle('🔒 XÁC NHẬN ĐÓNG TICKET')
+        .setColor(0xEF4444)
+        .setDescription('Bạn có chắc chắn muốn đóng ticket này không? Nếu đóng bây giờ, đơn hàng chưa chốt sẽ tự động được đánh dấu hủy.');
+
+      const customerRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`customer_confirm_close|${order.orderNo}`)
+          .setLabel('🔒 Xác nhận đóng (Hủy đơn)')
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('resolve_dismiss_prompt')
+          .setLabel('↩️ Tiếp tục giữ ticket')
+          .setStyle(ButtonStyle.Secondary)
+      );
+
+      return i.reply({ embeds: [customerEmbed], components: [customerRow] });
+    }
   }
 
   if (i.isChatInputCommand() && i.commandName === 'my-subscriptions') {
@@ -1663,7 +2411,7 @@ client.on('interactionCreate', async (i) => {
   if (!subs.length) return i.reply({ content: 'You have no active subscriptions.', ephemeral: true });
 
   const lines = subs.map(s => {
-    const when = s.currentPeriodEnd.toLocaleString('en-IN');
+    const when = s.currentPeriodEnd.toLocaleString('vi-VN');
     return `• **${s.product.name}** (\`${s.product.sku}\`) — ends **${when}**`;
   }).join('\n');
 
@@ -1696,7 +2444,7 @@ if (i.isButton() && i.customId.startsWith('renew_sub_')) {
       .setTitle(`Renewal — Order #${order.orderNo}`)
       .setDescription([
         `**Product**: ${product.name} (${product.sku})`,
-        `**Price**: ₹${(product.priceCents/100).toFixed(0)} ${product.currency}/mo`,
+        `**Price**: ${formatPrice(product.priceCents, product.currency)}`,
         `**Specs:**\n${specToLines(spec)}`
       ].join('\n'))
       .setColor(0x27AE60);
@@ -1729,26 +2477,23 @@ if (i.isChatInputCommand() && i.commandName === 'ticket-panel') {
 }
 
 // --- Admin: Setup Bilingual Server ---
-if (i.isChatInputCommand() && i.commandName === 'setup-bilingual') {
+if (i.isChatInputCommand() && (i.commandName === 'setup-bilingual' || i.commandName === 'unlock-server')) {
   await i.deferReply({ ephemeral: true });
   try {
-    const result = await setupBilingualServer(i.guild);
+    const result = await unlockServerChannels(i.guild);
     return i.editReply({
       content: [
-        '🎉 **Thiết lập server song ngữ hoàn tất thành công!**',
+        '🎉 **Đã mở khóa toàn bộ kênh & gỡ bỏ role ngôn ngữ thành công!**',
         '',
-        `• **Roles:** <@&${result.roles.vi.id}> & <@&${result.roles.en.id}>`,
-        `• **Cổng chọn ngôn ngữ:** <#${result.channels.welcome.id}> (Cụm 4AM - chỉ cụm này công khai cho user mới)`,
+        '• **Phân quyền:** Toàn bộ thành viên (@everyone) đều xem được các kênh mua hàng, Menu và Ticket.',
         `• **Danh mục ORDER:**`,
-        `  - Kênh Menu tích hợp song ngữ: <#${result.channels.menuVi.id}>`,
-        `  - Kênh Ticket: <#${result.channels.ticketVi.id}> (Tiếng Việt) & <#${result.channels.ticketEn.id}> (English)`,
-        `• **Danh mục Ticket mới:** <#${result.categories.ticket?.id}>`,
-        '',
-        '✨ *User mới vào server chỉ thấy duy nhất cụm 4AM. Sau khi bấm nhận Role, các kênh theo ngôn ngữ sẽ tự động hiển thị!*'
+        `  - Kênh Menu: <#${result.channels.menuVi.id}>`,
+        `  - Kênh Ticket: <#${result.channels.ticketVi.id}> (Tích hợp chọn song ngữ)`,
+        '✨ *Không còn yêu cầu chọn role Tiếng Việt/English để mở khóa kênh.*'
       ].join('\n')
     });
   } catch (err) {
-    console.error('Lỗi khi setup-bilingual:', err);
+    console.error('Lỗi khi mở khóa server:', err);
     return i.editReply({ content: `❌ Lỗi khi thiết lập server: ${err.message}` });
   }
 }
@@ -1897,7 +2642,6 @@ if (i.isChatInputCommand() && i.commandName === 'list-products') {
   return i.reply({ content: `📦 **Danh sách sản phẩm trong kho:**\n\n${lines}`, ephemeral: true });
 }
 
-  try {
     //
     // Slash commands
     //
@@ -1911,7 +2655,7 @@ if (i.isChatInputCommand() && i.commandName === 'list-products') {
 
     if (i.isChatInputCommand() && i.commandName === 'orders') {
       const list = await prisma.order.findMany({ orderBy: { createdAt: 'desc' }, take: 10 });
-      const lines = list.map(o => `• ${o.orderNo} — ${o.status} — ₹${(o.amountCents/100).toFixed(0)} ${o.currency}`).join('\n') || 'No orders yet.';
+      const lines = list.map(o => `• #${o.orderNo} — ${o.status} — ${formatPrice(o.amountCents, o.currency)}`).join('\n') || 'Chưa có đơn hàng nào.';
       return i.reply({ content: lines, ephemeral: true });
     }
 
@@ -2088,19 +2832,16 @@ if (i.isChatInputCommand() && i.commandName === 'list-products') {
         return i.reply({ content: 'Sales will be with you shortly!', ephemeral: true });
       }
     }
-// Utility: check if user is staff
-async function isStaffMember(i) {
-  const staffRoleId = process.env.STAFF_ROLE_ID;
-  const member = await i.guild.members.fetch(i.user.id);
-  return member.permissions.has(PermissionsBitField.Flags.ManageGuild) ||
-         (staffRoleId && member.roles.cache.has(staffRoleId));
-}
+
 if (i.isButton() && i.customId.startsWith('pay_upi_')) {
   const orderId = i.customId.split('pay_upi_')[1];
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { ticket: true } });
   if (!order) return i.reply({ content: 'Order not found.', ephemeral: true });
 
   const upiId = process.env.UPI_ID || 'not-set@upi';
+  const qrPathPng = path.resolve(__dirname, '../assets/upi.png');
+  const qrPathJpeg = path.resolve(__dirname, '../assets/upi.jpeg');
+  const localQrPath = fs.existsSync(qrPathPng) ? qrPathPng : (fs.existsSync(qrPathJpeg) ? qrPathJpeg : null);
   const qrUrl = process.env.UPI_QR;
 
   const embed = new EmbedBuilder()
@@ -2223,6 +2964,19 @@ if (i.isChatInputCommand() && i.commandName === 'announce') {
   const [draftId, type] = i.customId.replace('ticket_plan_', '').split('|');
   const sku = i.values[0];
 
+  if (sku === 'consult_seller') {
+    const staffRoleId = process.env.STAFF_ROLE_ID;
+    const embed = new EmbedBuilder()
+      .setTitle('💬 YÊU CẦU TƯ VẤN & BÀN BẠC VỚI NGƯỜI BÁN')
+      .setDescription(`Khách hàng <@${i.user.id}> đang cần tư vấn và bàn bạc về dịch vụ **${type}**.\n\nVui lòng để lại tin nhắn hoặc yêu cầu cụ thể bên dưới để nhân viên hỗ trợ bạn nhé!`)
+      .setColor(0xF1C40F)
+      .setTimestamp();
+    return i.reply({
+      content: staffRoleId ? `<@&${staffRoleId}>` : undefined,
+      embeds: [embed]
+    });
+  }
+
   const product = await prisma.product.findUnique({ where: { sku } });
   if (!product) return i.reply({ content: 'Plan not found. Please try again.', ephemeral: true });
 
@@ -2279,7 +3033,7 @@ if (i.isChatInputCommand() && i.commandName === 'announce') {
         .setTitle(`Order #${order.orderNo} — Review & Pay`)
         .setDescription([
           `**Product**: ${order.product.name} (${order.product.sku})`,
-          `**Price**: ₹${(order.amountCents/100).toFixed(0)} ${order.currency}/mo`,
+          `**Price**: ${formatPrice(order.amountCents, order.currency)}`,
           `**Specs:**\n${specToLines(spec)}`,
           serverName ? `**Server name**: ${serverName}` : null,
           notes ? `**Notes**: ${notes}` : null
@@ -2397,10 +3151,14 @@ if (i.isButton() && i.customId.startsWith('pay_sim_')) {
   });
 }
   } catch (err) {
-    console.error(err);
-    if (i.isRepliable()) {
-      return i.reply({ content: 'Something went wrong.', ephemeral: true });
-    }
+    console.error('⚠️ [interactionCreate Error]:', err);
+    try {
+      if (i.deferred) {
+        await i.editReply({ content: '❌ Có lỗi xảy ra khi xử lý yêu cầu. Vui lòng thử lại sau.' });
+      } else if (!i.replied && i.isRepliable()) {
+        await i.reply({ content: '❌ Có lỗi xảy ra khi xử lý yêu cầu. Vui lòng thử lại sau.', ephemeral: true });
+      }
+    } catch (_) {}
   }
 });
 
@@ -2408,32 +3166,332 @@ if (i.isButton() && i.customId.startsWith('pay_sim_')) {
 // ----------- Web Control Panel (Dashboard) Express Server -----------
 //
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+app.set('trust proxy', process.env.TRUST_PROXY || 'loopback');
 app.use(express.static(path.resolve(__dirname, '../public')));
 
-// Login auth check
-app.post('/api/login', (req, res) => {
-  const { password } = req.body;
-  const adminPass = process.env.ADMIN_PASSWORD || '4amstore123';
-  if (password === adminPass) {
-    const token = Buffer.from(adminPass).toString('base64');
-    return res.json({ ok: true, token });
-  }
-  return res.status(401).json({ ok: false, error: 'Mật khẩu quản trị không chính xác.' });
-});
+// Dashboard identities are separate from seller payout details in menuData.json.
+const scryptAsync = promisify(crypto.scrypt);
+const dashboardUsersFile = path.resolve(__dirname, '../.dashboard-users.json');
+const dashboardSessions = new Map();
+const loginAttempts = new Map();
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const ALLOWED_SELLER_PERMISSIONS = ['orders.read', 'orders.complete_own', 'orders.edit', 'products.edit'];
 
-function requireAdminAuth(req, res, next) {
-  const adminPass = process.env.ADMIN_PASSWORD || '4amstore123';
-  const expectedToken = Buffer.from(adminPass).toString('base64');
-  const authHeader = req.headers['authorization'];
-  if (authHeader === `Bearer ${expectedToken}`) {
-    return next();
+function readDashboardUsers() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(dashboardUsersFile, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    if (err.code !== 'ENOENT') console.error('Không đọc được tài khoản dashboard:', err);
+    return [];
   }
-  return res.status(401).json({ ok: false, error: 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ.' });
 }
 
+function writeDashboardUsers(users) {
+  const tempFile = `${dashboardUsersFile}.tmp`;
+  fs.writeFileSync(tempFile, JSON.stringify(users, null, 2), { mode: 0o600 });
+  fs.renameSync(tempFile, dashboardUsersFile);
+}
+
+async function hashDashboardPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  const derived = await scryptAsync(password, salt, 64);
+  return { salt, hash: derived.toString('hex') };
+}
+
+async function verifyDashboardPassword(password, stored) {
+  if (!stored?.salt || !stored?.hash) return false;
+  const expected = Buffer.from(stored.hash, 'hex');
+  const actual = await scryptAsync(password, stored.salt, expected.length);
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+app.post('/api/login', async (req, res) => {
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+  const now = Date.now();
+  const attempts = loginAttempts.get(ip) || { count: 0, resetAt: now + 15 * 60 * 1000 };
+  if (attempts.resetAt <= now) { attempts.count = 0; attempts.resetAt = now + 15 * 60 * 1000; }
+  if (attempts.count >= 10) return res.status(429).json({ ok: false, error: 'Thử đăng nhập quá nhiều. Vui lòng đợi 15 phút.' });
+
+  const username = String(req.body?.username || '').trim();
+  const password = String(req.body?.password || '');
+  let identity = null;
+  const adminPass = process.env.ADMIN_PASSWORD;
+
+  if (username.toLowerCase() === 'admin' && adminPass && password === adminPass) {
+    identity = { id: 'admin', username: 'admin', role: 'admin', sellerKey: null, permissions: ['*'] };
+  } else {
+    const user = readDashboardUsers().find(item => item.username.toLowerCase() === username.toLowerCase());
+    if (user?.enabled && await verifyDashboardPassword(password, user.password)) {
+      identity = { id: user.username, username: user.username, role: 'seller', sellerKey: user.sellerKey, permissions: user.permissions || ['orders.read'] };
+    }
+  }
+
+  if (!identity) {
+    attempts.count += 1;
+    loginAttempts.set(ip, attempts);
+    return res.status(401).json({ ok: false, error: 'Tên đăng nhập hoặc mật khẩu không chính xác.' });
+  }
+
+  loginAttempts.delete(ip);
+  const token = crypto.randomBytes(32).toString('base64url');
+  dashboardSessions.set(token, { ...identity, expiresAt: now + SESSION_TTL_MS });
+  return res.json({ ok: true, token, user: { username: identity.username, role: identity.role, sellerKey: identity.sellerKey, permissions: identity.permissions } });
+});
+
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  const session = dashboardSessions.get(token);
+  if (!session || session.expiresAt <= Date.now()) {
+    if (token) dashboardSessions.delete(token);
+    return res.status(401).json({ ok: false, error: 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ.' });
+  }
+
+  if (session.role === 'seller') {
+    const user = readDashboardUsers().find(item => item.username === session.username && item.enabled);
+    if (!user) {
+      dashboardSessions.delete(token);
+      return res.status(401).json({ ok: false, error: 'Tài khoản đã bị vô hiệu hóa.' });
+    }
+    session.permissions = user.permissions || ['orders.read'];
+    session.sellerKey = user.sellerKey;
+  }
+
+  req.dashboardUser = session;
+  req.dashboardToken = token;
+  return next();
+}
+
+function requireAdminAuth(req, res, next) {
+  return requireAuth(req, res, () => req.dashboardUser.role === 'admin'
+    ? next()
+    : res.status(403).json({ ok: false, error: 'Chức năng này chỉ dành cho quản trị viên.' }));
+}
+
+function requirePermission(permission) {
+  return (req, res, next) => requireAuth(req, res, () => {
+    if (req.dashboardUser.role === 'admin' || req.dashboardUser.permissions.includes(permission)) return next();
+    return res.status(403).json({ ok: false, error: 'Tài khoản chưa được cấp quyền này.' });
+  });
+}
+
+function canStaffAccessOrder(dashboardUser, order, menuData) {
+  if (!dashboardUser) return false;
+  if (dashboardUser.role === 'admin') return true;
+  if (dashboardUser.role !== 'seller') return false;
+
+  const sellerKey = dashboardUser.sellerKey;
+  if (!sellerKey) return false;
+
+  const data = menuData || (typeof getMenuData === 'function' ? getMenuData() : {});
+  const sellerObj = data.sellers?.[sellerKey];
+  const staffDiscordId = sellerObj?.discordId || (/^\d{17,20}$/.test(sellerKey) ? sellerKey : null);
+
+  let snapshot = {};
+  try {
+    snapshot = typeof order.planSnapshotJson === 'string'
+      ? JSON.parse(order.planSnapshotJson || '{}')
+      : (order.planSnapshotJson || {});
+  } catch (_) {}
+
+  const orderSellerId = snapshot.sellerId || order.sellerId;
+  const orderHandlers = Array.isArray(snapshot.handlers) ? snapshot.handlers : [];
+  const catKey = snapshot.categoryKey;
+  const cat = (catKey && data.categories) ? data.categories[catKey] : null;
+  const catHandlers = Array.isArray(cat?.handlers) ? cat.handlers : [];
+  const catSellerId = cat?.seller;
+
+  // Điều kiện 1: Đơn hoặc mặt hàng do A trực tiếp phụ trách
+  const isDirectSeller = (orderSellerId === sellerKey) || (staffDiscordId && orderSellerId === staffDiscordId);
+  const isCatSeller = (catSellerId === sellerKey) || (staffDiscordId && catSellerId === staffDiscordId);
+
+  // Điều kiện 2: Đơn hoặc mặt hàng phân cho nhóm (A, B, C) phụ trách (A có trong handlers)
+  const isInOrderHandlers = orderHandlers.includes(sellerKey) || (staffDiscordId && orderHandlers.includes(staffDiscordId));
+  const isInCatHandlers = catHandlers.includes(sellerKey) || (staffDiscordId && catHandlers.includes(staffDiscordId));
+
+  if (isDirectSeller || isCatSeller || isInOrderHandlers || isInCatHandlers) {
+    return true;
+  }
+
+  // Điều kiện 3: Đơn hoặc mặt hàng phân cho Toàn Server (All Server / STK Chung / Hỗ trợ chung)
+  const isCommonSeller = (orderSellerId === 'shop_common') || (catSellerId === 'shop_common');
+  const isGeneralSupport = (catKey === 'support' || !catKey);
+  const hasNoSpecificHandlers = (orderHandlers.length === 0) && (catHandlers.length === 0);
+
+  if (isCommonSeller || (isGeneralSupport && hasNoSpecificHandlers) || (!orderSellerId && hasNoSpecificHandlers)) {
+    return true;
+  }
+
+  // Không thuộc các trường hợp trên => Không được phép truy cập
+  return false;
+}
+
+function requireOrderManageAuth(req, res, next) {
+  return requireAuth(req, res, async () => {
+    const user = req.dashboardUser;
+    if (!user) return res.status(401).json({ ok: false, error: 'Chưa đăng nhập.' });
+    if (user.role === 'admin') return next();
+
+    if (user.role === 'seller') {
+      const hasEditPerm = Array.isArray(user.permissions) && user.permissions.includes('orders.edit');
+      if (!hasEditPerm) {
+        return res.status(403).json({ ok: false, error: 'Tài khoản chưa được cấp quyền chỉnh sửa đơn hàng.' });
+      }
+
+      const { id } = req.params;
+      if (!id) return res.status(400).json({ ok: false, error: 'Thiếu ID đơn hàng.' });
+
+      try {
+        const order = await prisma.order.findUnique({
+          where: { id },
+          include: { user: true, product: true, ticket: true }
+        });
+        if (!order) return res.status(404).json({ ok: false, error: 'Không tìm thấy đơn hàng.' });
+
+        if (!canStaffAccessOrder(user, order)) {
+          return res.status(403).json({ ok: false, error: 'Bạn không có quyền truy cập hoặc chỉnh sửa đơn hàng này.' });
+        }
+
+        req.targetOrder = order;
+        return next();
+      } catch (err) {
+        console.error('Lỗi kiểm tra quyền đơn hàng:', err);
+        return res.status(500).json({ ok: false, error: 'Lỗi kiểm tra quyền hạn.' });
+      }
+    }
+
+    return res.status(403).json({ ok: false, error: 'Không có quyền truy cập.' });
+  });
+}
+
+function canStaffAccessCategory(dashboardUser, catKey, cat, menuData) {
+  if (!dashboardUser) return false;
+  if (dashboardUser.role === 'admin') return true;
+  if (dashboardUser.role !== 'seller') return false;
+
+  const sellerKey = dashboardUser.sellerKey;
+  if (!sellerKey) return false;
+
+  const data = menuData || (typeof getMenuData === 'function' ? getMenuData() : {});
+  const sellerObj = data.sellers?.[sellerKey];
+  const staffDiscordId = sellerObj?.discordId || (/^\d{17,20}$/.test(sellerKey) ? sellerKey : null);
+
+  if (!cat) return false;
+
+  const catSellerId = cat.seller;
+  const catHandlers = Array.isArray(cat.handlers) ? cat.handlers : [];
+
+  // Điều kiện 1: A là người phụ trách chính của mặt hàng
+  const isCatSeller = (catSellerId === sellerKey) || (staffDiscordId && catSellerId === staffDiscordId);
+
+  // Điều kiện 2: A nằm trong nhóm (A, B, C) phụ trách mặt hàng
+  const isInCatHandlers = catHandlers.includes(sellerKey) || (staffDiscordId && catHandlers.includes(staffDiscordId));
+
+  if (isCatSeller || isInCatHandlers) {
+    return true;
+  }
+
+  // Điều kiện 3: Mặt hàng phân cho toàn server phụ trách (shop_common hoặc chưa gán ai)
+  const isCommonSeller = (catSellerId === 'shop_common') || (!catSellerId && catHandlers.length === 0);
+  if (isCommonSeller) {
+    return true;
+  }
+
+  // Điều kiện 4: Không thuộc các điều kiện trên => Không có quyền truy cập
+  return false;
+}
+
+function requireStoreConfigAuth(req, res, next) {
+  return requireAuth(req, res, () => {
+    const user = req.dashboardUser;
+    if (!user) return res.status(401).json({ ok: false, error: 'Chưa đăng nhập.' });
+    if (user.role === 'admin') return next();
+
+    if (user.role === 'seller') {
+      const canEdit = Array.isArray(user.permissions) && (user.permissions.includes('products.edit') || user.permissions.includes('orders.edit'));
+      if (canEdit) return next();
+      return res.status(403).json({ ok: false, error: 'Tài khoản chưa được cấp quyền chỉnh sửa mặt hàng.' });
+    }
+
+    return res.status(403).json({ ok: false, error: 'Không có quyền truy cập.' });
+  });
+}
+
+app.get('/api/me', requireAuth, (req, res) => res.json({ ok: true, user: {
+  username: req.dashboardUser.username,
+  role: req.dashboardUser.role,
+  sellerKey: req.dashboardUser.sellerKey,
+  permissions: req.dashboardUser.permissions
+} }));
+
+app.post('/api/logout', requireAuth, (req, res) => {
+  dashboardSessions.delete(req.dashboardToken);
+  return res.json({ ok: true });
+});
+
+app.get('/api/dashboard-users', requireAdminAuth, (req, res) => {
+  const users = readDashboardUsers().map(({ username, sellerKey, permissions, enabled, createdAt }) => ({ username, sellerKey, permissions, enabled, createdAt }));
+  return res.json({ ok: true, users });
+});
+
+app.post('/api/dashboard-users', requireAdminAuth, async (req, res) => {
+  const username = String(req.body?.username || '').trim();
+  const password = String(req.body?.password || '');
+  const sellerKey = String(req.body?.sellerKey || '').trim();
+  const permissions = Array.isArray(req.body?.permissions) ? [...new Set(req.body.permissions)] : ['orders.read'];
+  if (!/^[a-zA-Z0-9._-]{2,32}$/.test(username)) return res.status(400).json({ ok: false, error: 'Tên đăng nhập cần 2–32 ký tự (chữ, số, dấu . _ -).' });
+  if (password.length < 6 || password.length > 128) return res.status(400).json({ ok: false, error: 'Mật khẩu cần dài từ 6 đến 128 ký tự.' });
+  if (permissions.some(permission => !ALLOWED_SELLER_PERMISSIONS.includes(permission)) || !permissions.includes('orders.read')) {
+    return res.status(400).json({ ok: false, error: 'Quyền được chọn không hợp lệ.' });
+  }
+  const sellers = getMenuData().sellers || {};
+  if (!sellers[sellerKey] || sellers[sellerKey].isShop) return res.status(400).json({ ok: false, error: 'Hãy chọn seller hợp lệ (không phải STK chung).' });
+  const users = readDashboardUsers();
+  if (users.some(user => user.username.toLowerCase() === username.toLowerCase())) return res.status(409).json({ ok: false, error: 'Tên đăng nhập đã tồn tại.' });
+  if (users.some(user => user.sellerKey === sellerKey)) return res.status(409).json({ ok: false, error: 'Seller này đã có tài khoản dashboard.' });
+  const passwordRecord = await hashDashboardPassword(password);
+  users.push({ username, sellerKey, permissions, enabled: true, createdAt: new Date().toISOString(), password: passwordRecord });
+  writeDashboardUsers(users);
+  return res.status(201).json({ ok: true, user: { username, sellerKey, permissions, enabled: true } });
+});
+
+app.patch('/api/dashboard-users/:username', requireAdminAuth, async (req, res) => {
+  const users = readDashboardUsers();
+  const user = users.find(item => item.username.toLowerCase() === req.params.username.toLowerCase());
+  if (!user) return res.status(404).json({ ok: false, error: 'Không tìm thấy tài khoản.' });
+  if (typeof req.body?.enabled === 'boolean') user.enabled = req.body.enabled;
+  if (req.body?.permissions !== undefined) {
+    const permissions = Array.isArray(req.body.permissions) ? [...new Set(req.body.permissions)] : [];
+    if (!permissions.includes('orders.read') || permissions.some(permission => !ALLOWED_SELLER_PERMISSIONS.includes(permission))) return res.status(400).json({ ok: false, error: 'Quyền được chọn không hợp lệ.' });
+    user.permissions = permissions;
+  }
+  if (req.body?.password !== undefined) {
+    const password = String(req.body.password);
+    if (password.length < 6 || password.length > 128) return res.status(400).json({ ok: false, error: 'Mật khẩu cần dài từ 6 đến 128 ký tự.' });
+    user.password = await hashDashboardPassword(password);
+  }
+  if (req.body?.sellerKey !== undefined) {
+    const sellerKey = String(req.body.sellerKey).trim();
+    const sellers = getMenuData().sellers || {};
+    if (!sellers[sellerKey] || sellers[sellerKey].isShop) return res.status(400).json({ ok: false, error: 'Hãy chọn seller hợp lệ (không phải STK chung).' });
+    user.sellerKey = sellerKey;
+  }
+  writeDashboardUsers(users);
+  return res.json({ ok: true, user: { username: user.username, sellerKey: user.sellerKey, permissions: user.permissions, enabled: user.enabled } });
+});
+
+app.delete('/api/dashboard-users/:username', requireAdminAuth, (req, res) => {
+  const users = readDashboardUsers();
+  const idx = users.findIndex(item => item.username.toLowerCase() === req.params.username.toLowerCase());
+  if (idx === -1) return res.status(404).json({ ok: false, error: 'Không tìm thấy tài khoản.' });
+  users.splice(idx, 1);
+  writeDashboardUsers(users);
+  return res.json({ ok: true, message: 'Đã xóa tài khoản dashboard.' });
+});
+
 // Get store data & bot info (auto-sync live Discord avatars for all sellers)
-app.get('/api/data', async (req, res) => {
+app.get('/api/data', requireAuth, async (req, res) => {
   try {
     const data = getMenuData();
     if (client.isReady() && data.sellers) {
@@ -2456,6 +3514,51 @@ app.get('/api/data', async (req, res) => {
       user: client.user ? { tag: client.user.tag, id: client.user.id } : null,
       ping: client.ws?.ping || 0
     };
+    if (req.dashboardUser.role === 'seller') {
+      const key = req.dashboardUser.sellerKey;
+      const allowedCategories = {};
+      if (data.categories) {
+        for (const [catKey, cat] of Object.entries(data.categories)) {
+          if (canStaffAccessCategory(req.dashboardUser, catKey, cat, data)) {
+            allowedCategories[catKey] = cat;
+          }
+        }
+      }
+      const sanitizedSellers = {};
+      if (data.sellers) {
+        for (const [sKey, sVal] of Object.entries(data.sellers)) {
+          if (sKey === key || sKey === 'shop_common' || sVal.isShop) {
+            sanitizedSellers[sKey] = sVal;
+          } else {
+            sanitizedSellers[sKey] = {
+              name: sVal.name || sVal.username || sKey,
+              username: sVal.username,
+              globalName: sVal.globalName,
+              avatar: sVal.avatar,
+              discordId: sVal.discordId || (/^\d{17,20}$/.test(sKey) ? sKey : null),
+              isShop: false,
+              accounts: []
+            };
+          }
+        }
+      }
+      return res.json({
+        ok: true,
+        data: {
+          storeName: data.storeName,
+          paymentMethods: data.paymentMethods,
+          mainBannerUrl: data.mainBannerUrl,
+          logoUrl: data.logoUrl,
+          defaultLanguage: data.defaultLanguage,
+          menuEmbed: data.menuEmbed,
+          ticketChannelId: data.ticketChannelId,
+          ticketPanel: data.ticketPanel,
+          sellers: sanitizedSellers,
+          categories: allowedCategories
+        },
+        botInfo: null
+      });
+    }
     return res.json({ ok: true, data, botInfo });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message });
@@ -2463,7 +3566,7 @@ app.get('/api/data', async (req, res) => {
 });
 
 // Fetch Discord user profile by Discord User ID
-app.get('/api/discord-user/:id', async (req, res) => {
+app.get('/api/discord-user/:id', requireAdminAuth, async (req, res) => {
   try {
     const rawId = (req.params.id || '').trim();
     if (!/^\d{17,20}$/.test(rawId)) {
@@ -2489,7 +3592,7 @@ app.get('/api/discord-user/:id', async (req, res) => {
 });
 
 // Get all Discord emojis from servers where the bot is present
-app.get('/api/bot-emojis', async (req, res) => {
+app.get('/api/bot-emojis', requireAdminAuth, async (req, res) => {
   try {
     if (!client.isReady()) {
       return res.json({ ok: true, emojis: [] });
@@ -2512,14 +3615,40 @@ app.get('/api/bot-emojis', async (req, res) => {
 });
 
 // Save store data
-app.post('/api/save', requireAdminAuth, (req, res) => {
+app.post('/api/save', requireStoreConfigAuth, (req, res) => {
   try {
     const newConfig = req.body;
     if (!newConfig || typeof newConfig !== 'object') {
       return res.status(400).json({ ok: false, error: 'Dữ liệu không hợp lệ.' });
     }
     const menuMod = require('./menuData');
-    menuMod.saveData(newConfig);
+    const currentData = getMenuData();
+    let finalConfig = newConfig;
+
+    if (req.dashboardUser.role === 'seller') {
+      const incomingCategories = newConfig.categories || {};
+      const mergedCategories = { ...(currentData.categories || {}) };
+
+      for (const [catKey, incomingCat] of Object.entries(incomingCategories)) {
+        const existingCat = currentData.categories?.[catKey];
+        if (existingCat && canStaffAccessCategory(req.dashboardUser, catKey, existingCat, currentData)) {
+          mergedCategories[catKey] = {
+            ...existingCat,
+            ...incomingCat,
+            seller: existingCat.seller,
+            handlers: existingCat.handlers,
+            accountIndex: existingCat.accountIndex
+          };
+        }
+      }
+
+      finalConfig = {
+        ...currentData,
+        categories: mergedCategories
+      };
+    }
+
+    menuMod.saveData(finalConfig);
     delete require.cache[require.resolve('./menuData')];
     return res.json({ ok: true, message: 'Đã lưu cấu hình thành công!' });
   } catch (err) {
@@ -2551,53 +3680,742 @@ app.post('/api/sync-ticket', requireAdminAuth, async (req, res) => {
   }
 });
 
-// 1-Click Auto Setup Bilingual Server (Mô hình 1: Role-based)
-app.post('/api/setup-bilingual-server', requireAdminAuth, async (req, res) => {
+// Atomic Save & Sync to Discord Live
+app.post('/api/save-and-sync', requireStoreConfigAuth, async (req, res) => {
   try {
-    const guildId = process.env.GUILD_ID;
-    const guild = await client.guilds.fetch(guildId).catch(() => null);
-    if (!guild) {
-      return res.status(404).json({ ok: false, error: 'Không tìm thấy Server Discord từ GUILD_ID trong cấu hình .env.' });
+    const newConfig = req.body;
+    if (!newConfig || typeof newConfig !== 'object') {
+      return res.status(400).json({ ok: false, error: 'Dữ liệu không hợp lệ.' });
     }
-    const result = await setupBilingualServer(guild);
-    return res.json({
-      ok: true,
-      message: 'Thiết lập server song ngữ hoàn tất thành công!',
-      data: {
-        roles: { vi: result.roles.vi.name, en: result.roles.en.name },
-        channels: {
-          welcome: result.channels.welcome?.name,
-          menu: result.channels.menuVi?.name,
-          ticketVi: result.channels.ticketVi?.name,
-          ticketEn: result.channels.ticketEn?.name
+
+    const menuMod = require('./menuData');
+    const currentData = getMenuData();
+    let finalConfig = newConfig;
+
+    if (req.dashboardUser.role === 'seller') {
+      const incomingCategories = newConfig.categories || {};
+      const mergedCategories = { ...(currentData.categories || {}) };
+
+      for (const [catKey, incomingCat] of Object.entries(incomingCategories)) {
+        const existingCat = currentData.categories?.[catKey];
+        if (existingCat && canStaffAccessCategory(req.dashboardUser, catKey, existingCat, currentData)) {
+          mergedCategories[catKey] = {
+            ...existingCat,
+            ...incomingCat,
+            seller: existingCat.seller,
+            handlers: existingCat.handlers,
+            accountIndex: existingCat.accountIndex
+          };
         }
       }
+
+      finalConfig = {
+        ...currentData,
+        categories: mergedCategories
+      };
+    } else {
+      if (!String(finalConfig.storeName || '').trim()) {
+        return res.status(400).json({ ok: false, error: 'Tên cửa hàng không được để trống.' });
+      }
+      if (!String(finalConfig.menuEmbed?.vi?.title || '').trim()) {
+        return res.status(400).json({ ok: false, error: 'Tiêu đề Menu tiếng Việt không được để trống.' });
+      }
+      if (!String(finalConfig.ticketPanel?.vi?.title || '').trim()) {
+        return res.status(400).json({ ok: false, error: 'Tiêu đề Ticket tiếng Việt không được để trống.' });
+      }
+      const embedColors = [finalConfig.menuEmbed?.color, finalConfig.ticketPanel?.color].filter(Boolean);
+      if (embedColors.some(color => !/^#[0-9A-Fa-f]{6}$/.test(color))) {
+        return res.status(400).json({ ok: false, error: 'Màu embed phải có định dạng #RRGGBB.' });
+      }
+    }
+
+    menuMod.saveData(finalConfig);
+    delete require.cache[require.resolve('./menuData')];
+
+    const syncErrors = [];
+    if (client.isReady()) {
+      try {
+        await syncMenuChannel();
+      } catch (err) {
+        console.error('Lỗi sync menu live:', err);
+        syncErrors.push('Menu: ' + err.message);
+      }
+      try {
+        await syncTicketChannel();
+      } catch (err) {
+        console.error('Lỗi sync ticket live:', err);
+        syncErrors.push('Ticket: ' + err.message);
+      }
+    }
+
+    if (syncErrors.length > 0) {
+      return res.json({
+        ok: true,
+        partial: true,
+        message: 'Đã lưu cấu hình nhưng gặp lỗi sync Discord: ' + syncErrors.join('; ')
+      });
+    }
+
+    return res.json({
+      ok: true,
+      message: client.isReady()
+        ? 'Đã lưu và đồng bộ toàn bộ Menu & Ticket lên Discord!'
+        : 'Đã lưu cấu hình thành công (Bot Discord đang offline, chưa thể đồng bộ live)!'
     });
   } catch (err) {
-    console.error('Lỗi khi setup bilingual server:', err);
+    console.error('Lỗi khi lưu và đồng bộ:', err);
     return res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-app.get('/health', (_, res) => res.json({ ok: true }));
+// Translation Helper with token masking. Technical Discord syntax and formatting
+// are restored byte-for-byte after translation.
+async function translateText(text, from = 'vi', to = 'en') {
+  if (!text || typeof text !== 'string' || !text.trim()) return text;
+  const tokens = [];
+  const tokenRegex = /(https?:\/\/[^\s]+|```[\s\S]*?```|`[^`]+`|\{[a-zA-Z0-9_]+\}|<@[!&]?\d+>|<#\d+>|<@&\d+>|<a?:[a-zA-Z0-9_~]+:\d+>|<t:\d+(?::[tTdDfFR])?>|<\/[a-zA-Z0-9_-]+:\d+>|\*\*|__|~~|\|\||(?<!\*)\*(?!\*)|(?<!_)_(?!_)|(?:\p{Extended_Pictographic}|\p{Emoji_Presentation}))/gu;
+  const tokenized = text.replace(tokenRegex, (match) => {
+    const placeholder = 'ZXQPH' + tokens.length + 'QXZ';
+    tokens.push({ placeholder, original: match });
+    return placeholder;
+  });
+
+  if (!/[a-zA-ZÀ-ỹ]/.test(tokenized)) {
+    return text;
+  }
+
+  return new Promise((resolve, reject) => {
+    const postData = querystring.stringify({
+      client: 'gtx',
+      sl: from,
+      tl: to,
+      dt: 't',
+      q: tokenized
+    });
+
+    const options = {
+      hostname: 'translate.googleapis.com',
+      path: '/translate_a/single?' + postData,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+      }
+    };
+
+    const request = https.request(options, (response) => {
+      let data = '';
+      response.on('data', chunk => data += chunk);
+      response.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          let translated = (parsed[0] || []).map(item => item[0]).join('');
+          for (let i = 0; i < tokens.length; i++) {
+            const regex = new RegExp('ZXQPH' + i + 'QXZ', 'gi');
+            translated = translated.replace(regex, tokens[i].original);
+          }
+          // Translation services sometimes insert spaces immediately inside
+          // paired Markdown delimiters. Keep the Discord formatting valid.
+          translated = translated
+            .replace(/\*\*\s*([\s\S]*?)\s*\*\*/g, '**$1**')
+            .replace(/__\s*([\s\S]*?)\s*__/g, '__$1__')
+            .replace(/~~\s*([\s\S]*?)\s*~~/g, '~~$1~~')
+            .replace(/\|\|\s*([\s\S]*?)\s*\|\|/g, '||$1||')
+            .replace(/(?<!\*)\*\s*([^*\n]+?)\s*\*(?!\*)/g, '*$1*')
+            .replace(/(?<!_)_\s*([^_\n]+?)\s*_(?!_)/g, '_$1_');
+          const missingToken = tokens.some(token => !translated.includes(token.original));
+          if (missingToken) throw new Error('Bản dịch làm thay đổi placeholder hoặc định dạng Discord');
+          resolve(translated);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    request.setTimeout(10000, () => request.destroy(new Error('Dịch vụ dịch quá thời gian chờ')));
+    request.on('error', reject);
+  });
+}
+
+// Auto translate text / batch texts (VI -> EN or EN -> VI)
+app.post('/api/translate', requireAuth, async (req, res) => {
+  try {
+    const { text, texts, from = 'vi', to = 'en' } = req.body;
+    if (Array.isArray(texts)) {
+      const results = await Promise.all(texts.map(t => translateText(t, from, to)));
+      return res.json({ ok: true, translations: results });
+    }
+    if (typeof text === 'string') {
+      const result = await translateText(text, from, to);
+      return res.json({ ok: true, translation: result });
+    }
+    return res.status(400).json({ ok: false, error: 'Thiếu tham số text hoặc texts để dịch.' });
+  } catch (err) {
+    console.error('Lỗi API translate:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Unlock Server Channels & Remove Language Roles
+app.post('/api/setup-bilingual-server', requireAdminAuth, async (req, res) => {
+  try {
+    const guildId = process.env.GUILD_ID;
+    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) {
+      return res.status(404).json({ ok: false, error: 'Không tìm thấy Server Discord từ GUILD_ID trong cấu hình .env.' });
+    }
+    const result = await unlockServerChannels(guild);
+    return res.json({
+      ok: true,
+      message: 'Đã mở khóa toàn bộ kênh cho tất cả thành viên (@everyone) và gỡ bỏ role ngôn ngữ thành công!',
+      data: {
+        channels: {
+          menu: result.channels.menuVi?.name,
+          ticket: result.channels.ticketVi?.name
+        }
+      }
+    });
+  } catch (err) {
+    console.error('Lỗi khi mở khóa server:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// --- Orders Management API ---
+
+// Get all orders with metrics & live Discord info
+app.get('/api/orders', requirePermission('orders.read'), async (req, res) => {
+  try {
+    let rawOrders = await prisma.order.findMany({
+      include: {
+        user: true,
+        product: true,
+        ticket: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (req.dashboardUser.role === 'seller') {
+      const menuData = getMenuData();
+      rawOrders = rawOrders.filter(order => canStaffAccessOrder(req.dashboardUser, order, menuData));
+    }
+
+    let totalRevenue = 0;
+    let pendingOrders = 0;
+    let completedOrders = 0;
+
+    const orders = await Promise.all(rawOrders.map(async (o) => {
+      // Calculate revenue from PAID & COMPLETED orders
+      if (o.status === 'PAID' || o.status === 'COMPLETED') {
+        totalRevenue += (o.amountCents || 0);
+      }
+      if (o.status === 'PENDING') {
+        pendingOrders++;
+      } else if (o.status === 'COMPLETED') {
+        completedOrders++;
+      }
+
+      let parsedSnapshot = {};
+      try {
+        parsedSnapshot = JSON.parse(o.planSnapshotJson || '{}');
+      } catch (_) {}
+
+      // Live Discord User Info
+      let discordUser = {
+        id: o.user?.discordId || '',
+        name: o.user?.name || 'Khách vãng lai',
+        username: o.user?.name || '',
+        globalName: o.user?.name || '',
+        tag: o.user?.name || '',
+        avatar: null
+      };
+
+      if (o.user?.discordId && client.isReady()) {
+        const cached = client.users.cache.get(o.user.discordId);
+        if (cached) {
+          discordUser.username = cached.username;
+          discordUser.globalName = cached.globalName || cached.username;
+          discordUser.tag = cached.tag || cached.username;
+          discordUser.avatar = cached.displayAvatarURL({ extension: 'png', size: 64 });
+        } else {
+          try {
+            const fetched = await client.users.fetch(o.user.discordId).catch(() => null);
+            if (fetched) {
+              discordUser.username = fetched.username;
+              discordUser.globalName = fetched.globalName || fetched.username;
+              discordUser.tag = fetched.tag || fetched.username;
+              discordUser.avatar = fetched.displayAvatarURL({ extension: 'png', size: 64 });
+            }
+          } catch (_) {}
+        }
+      }
+
+      // Live Ticket Channel status
+      let ticketInfo = null;
+      if (o.ticket) {
+        let isChannelOpen = false;
+        let chName = null;
+        if (client.isReady() && o.ticket.channelId) {
+          const ch = client.channels.cache.get(o.ticket.channelId);
+          if (ch) {
+            isChannelOpen = true;
+            chName = ch.name;
+          }
+        }
+        ticketInfo = {
+          id: o.ticket.id,
+          channelId: o.ticket.channelId,
+          channelName: chName,
+          status: o.ticket.status,
+          isChannelOpen
+        };
+      }
+
+      return {
+        id: o.id,
+        orderNo: o.orderNo,
+        status: o.status,
+        amountCents: o.amountCents,
+        currency: o.currency || 'VNĐ',
+        paymentProvider: o.paymentProvider,
+        providerRef: o.providerRef,
+        planSnapshot: parsedSnapshot,
+        product: o.product ? {
+          id: o.product.id,
+          name: o.product.name,
+          type: o.product.type,
+          sku: o.product.sku
+        } : null,
+        user: discordUser,
+        ticket: ticketInfo,
+        createdAt: o.createdAt,
+        updatedAt: o.updatedAt
+      };
+    }));
+
+    return res.json({
+      ok: true,
+      metrics: {
+        totalOrders: orders.length,
+        totalRevenue,
+        pendingOrders,
+        completedOrders
+      },
+      orders
+    });
+  } catch (err) {
+    console.error('Lỗi API get orders:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Seller access is deliberately narrower than admin order management: a seller
+// may only complete a paid order that is explicitly assigned to their seller ID.
+app.post('/api/orders/:id/complete-own', requirePermission('orders.complete_own'), async (req, res) => {
+  try {
+    const existing = await prisma.order.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ ok: false, error: 'Không tìm thấy đơn hàng.' });
+    const sellerKey = req.dashboardUser.sellerKey;
+    const seller = getMenuData().sellers?.[sellerKey];
+    const discordId = seller?.discordId || (/^\d{17,20}$/.test(sellerKey) ? sellerKey : null);
+    let snapshot = {};
+    try { snapshot = JSON.parse(existing.planSnapshotJson || '{}'); } catch (_) {}
+    if (snapshot.sellerId !== sellerKey && (!discordId || snapshot.sellerId !== discordId)) {
+      return res.status(404).json({ ok: false, error: 'Không tìm thấy đơn hàng được giao cho tài khoản này.' });
+    }
+    if (existing.status !== 'PAID') return res.status(409).json({ ok: false, error: 'Chỉ có thể hoàn tất đơn đã được xác nhận thanh toán.' });
+    const updated = await updateOrderStatus(existing.id, 'COMPLETED', 'DASHBOARD_SELLER', `COMPLETED_BY_${req.dashboardUser.username}`);
+    return res.json({ ok: true, order: updated, message: `Đã hoàn tất đơn #${existing.orderNo}.` });
+  } catch (err) {
+    console.error('Lỗi seller hoàn tất đơn:', err);
+    return res.status(500).json({ ok: false, error: 'Không thể cập nhật đơn hàng.' });
+  }
+});
+
+// Update order status with 2-way sync to Discord
+app.post('/api/orders/:id/status', requireOrderManageAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, amount, notifyDiscord = true } = req.body;
+    if (!status) {
+      return res.status(400).json({ ok: false, error: 'Thiếu trạng thái (status).' });
+    }
+
+    const existing = req.targetOrder || await prisma.order.findUnique({
+      where: { id },
+      include: { user: true, product: true, ticket: true }
+    });
+    if (!existing) {
+      return res.status(404).json({ ok: false, error: 'Không tìm thấy đơn hàng.' });
+    }
+
+    const updaterActor = req.dashboardUser.role === 'admin' ? 'PANEL_ADMIN' : `STAFF_${req.dashboardUser.username.toUpperCase()}`;
+    let updated = await updateOrderStatus(id, status, updaterActor, 'UPDATED_BY_WEB');
+    if (amount !== undefined && amount !== null && !isNaN(amount)) {
+      updated = await updateOrderAmount(id, amount);
+    }
+
+    // Two-way sync: Send receipt / status embed to Discord ticket channel if channel is open
+    if (notifyDiscord && existing.ticket?.channelId && client.isReady()) {
+      try {
+        const channel = await client.channels.fetch(existing.ticket.channelId).catch(() => null);
+        if (channel && channel.isTextBased()) {
+          let parsedSnapshot = {};
+          try {
+            parsedSnapshot = JSON.parse(existing.planSnapshotJson || '{}');
+          } catch (_) {}
+
+          const serviceName = parsedSnapshot.categoryLabel || existing.product?.name || 'Dịch vụ';
+          const formattedAmount = (updated.amountCents || 0).toLocaleString('vi-VN') + ' ' + (updated.currency || 'VNĐ');
+
+          let statusBadge = '⏳ Đang Chờ Xử Lý';
+          let embedColor = 0xF59E0B;
+          let statusDesc = `Đơn hàng **#${existing.orderNo}** đang được nhân viên tiếp nhận và xử lý.`;
+
+          if (status === 'PAID') {
+            statusBadge = '💳 ĐÃ XÁC NHẬN THANH TOÁN';
+            embedColor = 0x10B981;
+            statusDesc = `🎉 **Thanh toán thành công!** Đơn hàng **#${existing.orderNo}** đã được xác nhận thanh toán hợp lệ trên Web Control Panel. Nhân viên sẽ bàn giao dịch vụ ngay cho bạn.`;
+          } else if (status === 'COMPLETED') {
+            statusBadge = '🎉 ĐÃ HOÀN THÀNH & GIAO HÀNG';
+            embedColor = 0x0EA5E9;
+            statusDesc = `🌟 Đơn hàng **#${existing.orderNo}** đã hoàn thành bàn giao! Cảm ơn bạn đã tin tưởng và ủng hộ **${getMenuData().storeName || '4AM STORE'}**.`;
+          } else if (status === 'CANCELLED') {
+            statusBadge = '❌ ĐÃ HỦY ĐƠN';
+            embedColor = 0xEF4444;
+            statusDesc = `Đơn hàng **#${existing.orderNo}** đã được hủy bởi quản trị viên.`;
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle(`🔔 CẬP NHẬT ĐƠN HÀNG: ${statusBadge}`)
+            .setDescription(statusDesc)
+            .addFields(
+              { name: '📦 Dịch vụ / Sản phẩm', value: `**${serviceName}**`, inline: true },
+              { name: '💰 Số tiền', value: `**${formattedAmount}**`, inline: true },
+              { name: '👤 Khách hàng', value: `<@${existing.user?.discordId}>`, inline: true }
+            )
+            .setColor(embedColor)
+            .setFooter({ text: '4AM Control Panel • Đồng bộ trực tiếp' })
+            .setTimestamp();
+
+          await channel.send({ embeds: [embed] });
+        }
+      } catch (err) {
+        console.error('Không thể gửi thông báo ticket Discord:', err);
+      }
+    }
+
+    return res.json({ ok: true, order: updated, message: `Đã cập nhật trạng thái đơn #${existing.orderNo} sang ${status}!` });
+  } catch (err) {
+    console.error('Lỗi khi cập nhật trạng thái đơn:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Update order amount
+app.post('/api/orders/:id/amount', requireOrderManageAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount } = req.body;
+    if (amount === undefined || isNaN(amount)) {
+      return res.status(400).json({ ok: false, error: 'Số tiền không hợp lệ.' });
+    }
+    const updated = await updateOrderAmount(id, amount);
+    return res.json({ ok: true, order: updated, message: 'Đã cập nhật số tiền đơn hàng!' });
+  } catch (err) {
+    console.error('Lỗi khi cập nhật số tiền đơn:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Full update of order fields (Service name, Amount, Status, Notes, Seller, Customer Name)
+app.post('/api/orders/:id/update', requireOrderManageAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { serviceName, notes, amount, status, sellerName, sellerId, customerName, notifyDiscord = false } = req.body;
+
+    const existing = req.targetOrder || await prisma.order.findUnique({
+      where: { id },
+      include: { user: true, product: true, ticket: true }
+    });
+    if (!existing) {
+      return res.status(404).json({ ok: false, error: 'Không tìm thấy đơn hàng.' });
+    }
+
+    // Update snapshot json
+    let snapshot = {};
+    try {
+      snapshot = JSON.parse(existing.planSnapshotJson || '{}');
+    } catch (_) {}
+
+    if (serviceName) snapshot.categoryLabel = serviceName;
+    if (notes !== undefined) {
+      snapshot.selectedItem = notes;
+      snapshot.notes = notes;
+    }
+    if (sellerName) snapshot.sellerName = sellerName;
+    if (sellerId) snapshot.sellerId = sellerId;
+    snapshot.updatedAt = new Date().toISOString();
+
+    const orderData = {
+      planSnapshotJson: JSON.stringify(snapshot)
+    };
+
+    if (amount !== undefined && !isNaN(amount)) {
+      orderData.amountCents = Math.max(0, parseInt(amount, 10) || 0);
+    }
+    if (status) {
+      orderData.status = status;
+    }
+
+    const updated = await prisma.order.update({
+      where: { id },
+      data: orderData,
+      include: { user: true, product: true, ticket: true }
+    });
+
+    // If customerName provided and differs, update user record
+    if (customerName && existing.user && existing.user.name !== customerName) {
+      await prisma.user.update({
+        where: { id: existing.user.id },
+        data: { name: customerName }
+      }).catch(() => {});
+    }
+
+    // Two-way sync to Discord if requested and channel exists
+    if (notifyDiscord && existing.ticket?.channelId && client.isReady()) {
+      try {
+        const channel = await client.channels.fetch(existing.ticket.channelId).catch(() => null);
+        if (channel && channel.isTextBased()) {
+          const formattedAmount = (updated.amountCents || 0).toLocaleString('vi-VN') + ' ' + (updated.currency || 'VNĐ');
+          let statusBadge = '⏳ Đang Chờ Xử Lý';
+          let embedColor = 0xF59E0B;
+          if (updated.status === 'PAID') {
+            statusBadge = '💳 ĐÃ XÁC NHẬN THANH TOÁN';
+            embedColor = 0x10B981;
+          } else if (updated.status === 'COMPLETED') {
+            statusBadge = '🎉 ĐÃ HOÀN THÀNH & GIAO HÀNG';
+            embedColor = 0x0EA5E9;
+          } else if (updated.status === 'CANCELLED') {
+            statusBadge = '❌ ĐÃ HỦY ĐƠN';
+            embedColor = 0xEF4444;
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle(`🔔 CẬP NHẬT ĐƠN HÀNG: ${statusBadge}`)
+            .setDescription(`Thông tin đơn hàng **#${existing.orderNo}** đã được cập nhật bởi quản trị viên.`)
+            .addFields(
+              { name: '📦 Dịch vụ', value: `**${snapshot.categoryLabel || existing.product?.name || 'Dịch vụ'}**`, inline: true },
+              { name: '💰 Số tiền', value: `**${formattedAmount}**`, inline: true },
+              { name: '👤 Phụ trách', value: `**${snapshot.sellerName || 'Shop Admin'}**`, inline: true }
+            )
+            .setColor(embedColor)
+            .setFooter({ text: '4AM Control Panel • Cập nhật trực tiếp' })
+            .setTimestamp();
+
+          if (notes) {
+            embed.addFields({ name: '📝 Ghi chú', value: notes, inline: false });
+          }
+
+          await channel.send({ embeds: [embed] });
+        }
+      } catch (err) {
+        console.error('Không thể gửi thông báo ticket Discord:', err);
+      }
+    }
+
+    return res.json({ ok: true, order: updated, message: `Đã lưu cập nhật cho đơn #${existing.orderNo}!` });
+  } catch (err) {
+    console.error('Lỗi khi cập nhật chi tiết đơn:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Delete an order
+app.delete('/api/orders/:id', requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.ticket.deleteMany({ where: { orderId: id } });
+    await prisma.subscription.deleteMany({ where: { lastOrderId: id } });
+    await prisma.order.delete({ where: { id } });
+    return res.json({ ok: true, message: 'Đã xóa đơn hàng thành công!' });
+  } catch (err) {
+    console.error('Lỗi khi xóa đơn hàng:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Create manual order
+app.post('/api/orders/create', requireAdminAuth, async (req, res) => {
+  try {
+    const { discordId, customerName, serviceName, categoryKey, amount, status = 'PENDING', notes, sellerId, sellerName } = req.body;
+
+    // Ensure or create user
+    const finalDiscordId = (discordId && /^\d{17,20}$/.test(discordId.trim()))
+      ? discordId.trim()
+      : 'guest_' + Date.now();
+
+    const user = await ensureUser(finalDiscordId, null, customerName || 'Khách Hàng', null);
+
+    // Ensure product
+    const prodSku = categoryKey ? `CAT_${categoryKey.toUpperCase()}` : `PROD_MANUAL_${Date.now()}`;
+    const product = await findOrCreateProduct({
+      type: 'STORE_CATEGORY',
+      name: serviceName || 'Dịch vụ tùy chọn',
+      sku: prodSku,
+      specJson: JSON.stringify({ label: serviceName || 'Dịch vụ tùy chọn' }),
+      priceCents: Math.max(0, parseInt(amount, 10) || 0),
+      currency: 'VNĐ'
+    });
+
+    const planSnapshot = {
+      categoryKey: categoryKey || 'custom',
+      categoryLabel: serviceName || product.name,
+      sellerId: sellerId || 'shop_common',
+      sellerName: sellerName || 'Shop Admin',
+      selectedItem: notes || '',
+      notes: notes || '',
+      isManual: true,
+      createdAt: new Date().toISOString()
+    };
+
+    const orderNo = shortOrderNo();
+    const order = await prisma.order.create({
+      data: {
+        orderNo,
+        userId: user.id,
+        productId: product.id,
+        planSnapshotJson: JSON.stringify(planSnapshot),
+        amountCents: Math.max(0, parseInt(amount, 10) || 0),
+        currency: 'VNĐ',
+        status: status || 'PENDING',
+        paymentProvider: 'PANEL_ADMIN',
+        providerRef: 'MANUAL_CREATE'
+      },
+      include: { user: true, product: true, ticket: true }
+    });
+
+    return res.json({ ok: true, order, message: `Đã tạo đơn hàng #${order.orderNo} thành công!` });
+  } catch (err) {
+    console.error('Lỗi khi tạo đơn hàng thủ công:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// --- GPM Pay Auto Payment Webhook Endpoint ---
+app.post('/api/webhook/gpm-pay', async (req, res) => {
+  try {
+    const signature = req.headers['x-gpm-signature'] || req.headers['x-signature'] || req.body?.signature || '';
+    const secret = process.env.GPM_PAY_WEBHOOK_SECRET;
+
+    if (secret && !verifyHmacSignature(JSON.stringify(req.body), signature, secret)) {
+      console.warn('⚠️ [GPM Pay Webhook] Từ chối request do chữ ký HMAC không hợp lệ.');
+      return res.status(401).json({ ok: false, error: 'Chữ ký HMAC không hợp lệ.' });
+    }
+
+    const result = await processGpmWebhook(req.body, {
+      getValidReceivingAccounts: () => {
+        const data = getMenuData();
+        const accounts = [];
+        for (const s of Object.values(data.sellers || {})) {
+          for (const acc of s.accounts || []) {
+            if (acc.account) accounts.push(acc.account);
+          }
+        }
+        if (process.env.BANK_ACCOUNT) accounts.push(process.env.BANK_ACCOUNT);
+        return accounts;
+      },
+      onOrderPaid: async (order, meta) => {
+        await upsertSubscriptionForPaidOrder(order.id).catch(() => {});
+        if (order.ticket?.channelId && client.isReady()) {
+          const ch = await client.channels.fetch(order.ticket.channelId).catch(() => null);
+          if (ch && ch.isTextBased()) {
+            const formatted = formatPrice(meta.transferAmount, order.currency);
+            await ch.send(`🎉 **Thanh toán tự động thành công!** Đơn hàng **#${order.orderNo}** đã được hệ thống GPM Pay xác nhận (${formatted}). Staff sẽ kích hoạt dịch vụ cho bạn ngay!`).catch(() => {});
+          }
+        }
+      }
+    });
+
+    return res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    console.error('⚠️ [GPM Pay Webhook Error]:', err);
+    return res.status(500).json({ ok: false, error: 'Lỗi máy chủ khi xử lý webhook thanh toán.' });
+  }
+});
+
+// --- Real Production Health Check Endpoint ---
+app.get('/health', async (_, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    const botReady = client.isReady();
+    return res.status(200).json({
+      status: 'healthy',
+      database: 'connected',
+      discordBot: botReady ? 'ready' : 'connecting',
+      botPing: client.ws?.ping || 0,
+      uptimeSeconds: Math.floor(process.uptime()),
+      memory: {
+        rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+        heapUsedMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    return res.status(503).json({
+      status: 'unhealthy',
+      error: err.message,
+      discordBot: client.isReady() ? 'ready' : 'disconnected',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 // Serve frontend SPA fallback
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(__dirname, '../public/index.html'));
 });
 
+let serverInstance = null;
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`\n🛑 [Shutdown] Nhận tín hiệu ${signal}. Bắt đầu tắt hệ thống an toàn...`);
+
+  try {
+    if (serverInstance) {
+      await new Promise(resolve => serverInstance.close(resolve));
+      console.log('✅ [Shutdown] HTTP server đã dừng tiếp nhận kết nối mới.');
+    }
+    if (client.isReady()) {
+      client.destroy();
+      console.log('✅ [Shutdown] Đã ngắt kết nối Discord client.');
+    }
+    await prisma.$disconnect();
+    console.log('✅ [Shutdown] Đã đóng kết nối Prisma SQLite an toàn.');
+  } catch (err) {
+    console.error('⚠️ [Shutdown] Lỗi khi tắt hệ thống:', err);
+  } finally {
+    console.log('👋 [Shutdown] Hoàn tất tắt hệ thống.');
+    process.exit(0);
+  }
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
 (async () => {
   const desiredPort = parseInt(process.env.PORT || '3000', 10);
   let PORT = desiredPort;
   try {
-    const server = app.listen(PORT, '0.0.0.0', () => {
+    serverInstance = app.listen(PORT, '0.0.0.0', () => {
       console.log(`🌐 Web Control Panel đang chạy tại: http://localhost:${PORT}`);
     });
-    server.on('error', async (e) => {
+    serverInstance.on('error', async (e) => {
       if (e.code === 'EADDRINUSE') {
         console.warn(`Cổng ${PORT} đang bận, tự động chọn cổng khả dụng tiếp theo...`);
         PORT = await getPort({ port: desiredPort + 1 });
-        app.listen(PORT, '0.0.0.0', () => {
+        serverInstance = app.listen(PORT, '0.0.0.0', () => {
           console.log(`🌐 Web Control Panel đang chạy tại: http://localhost:${PORT}`);
         });
       }

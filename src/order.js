@@ -21,9 +21,19 @@ async function findOrCreateProduct({ type, name, sku, specJson, priceCents, curr
   return prisma.product.create({ data: { type, name, sku, specJson, priceCents, currency, active: true } });
 }
 
-async function createOrder({ userId, productId, planSnapshotJson, amountCents, currency }) {
-  const orderNo = shortOrderNo();
-  return prisma.order.create({ data: { orderNo, userId, productId, planSnapshotJson, amountCents, currency, status: 'PENDING' } });
+async function createOrder({ userId, productId, planSnapshotJson, amountCents, currency, orderNo }) {
+  const finalOrderNo = orderNo || shortOrderNo();
+  return prisma.order.create({
+    data: {
+      orderNo: finalOrderNo,
+      userId,
+      productId,
+      planSnapshotJson,
+      amountCents: amountCents || 0,
+      currency: currency || 'VNĐ',
+      status: 'PENDING'
+    }
+  });
 }
 
 async function markPaid(orderId, provider = 'SIMULATED', ref = 'SIM-OK') {
@@ -31,14 +41,32 @@ async function markPaid(orderId, provider = 'SIMULATED', ref = 'SIM-OK') {
 }
 
 // src/order.js
-async function attachTicket(orderId, guildId, channelId) {
+async function attachTicket(orderId, guildId, channelId, userId = null) {
   // Idempotent: if the channel already has a ticket row, reuse it.
   return prisma.ticket.upsert({
     where: { channelId },                // channelId is @unique
-    update: { orderId, guildId },        // update to point at the latest order
-    create: { orderId, guildId, channelId, status: 'OPEN' }
+    update: { orderId, guildId, ...(userId ? { userId } : {}) },
+    create: { orderId, guildId, channelId, ...(userId ? { userId } : {}), status: 'OPEN' }
   });
-
 }
 
-module.exports = { ensureUser, findOrCreateProduct, createOrder, markPaid, attachTicket };
+async function updateOrderStatus(orderId, status, paymentProvider = null, providerRef = null) {
+  const data = { status };
+  if (paymentProvider) data.paymentProvider = paymentProvider;
+  if (providerRef) data.providerRef = providerRef;
+  return prisma.order.update({
+    where: { id: orderId },
+    data,
+    include: { user: true, product: true, ticket: true }
+  });
+}
+
+async function updateOrderAmount(orderId, amountCents) {
+  return prisma.order.update({
+    where: { id: orderId },
+    data: { amountCents: Math.max(0, parseInt(amountCents, 10) || 0) },
+    include: { user: true, product: true, ticket: true }
+  });
+}
+
+module.exports = { ensureUser, findOrCreateProduct, createOrder, markPaid, attachTicket, updateOrderStatus, updateOrderAmount };
