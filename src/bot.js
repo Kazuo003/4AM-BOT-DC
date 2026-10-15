@@ -3487,6 +3487,12 @@ client.on('interactionCreate', async (i) => {
       order = ticket?.order;
     }
 
+    // Tạm dừng timer đếm ngược tự động xóa kênh (nếu có) để khách hàng kịp điền feedback vào modal
+    if (i.channel?.id && autoCloseTimers.has(i.channel.id)) {
+      clearTimeout(autoCloseTimers.get(i.channel.id).timer);
+      autoCloseTimers.delete(i.channel.id);
+    }
+
     // Kiểm tra quyền: Chỉ khách hàng sở hữu đơn mới có quyền gửi đánh giá
     const customerDiscordId = order?.user?.discordId;
     if (customerDiscordId && customerDiscordId !== i.user.id) {
@@ -3697,8 +3703,8 @@ client.on('interactionCreate', async (i) => {
             .setLabel('❌ Hủy đóng tự động')
             .setStyle(ButtonStyle.Secondary),
           new ButtonBuilder()
-            .setCustomId(`close_simple_ticket|${order?.orderNo || orderNo}`)
-            .setLabel('🔒 Đóng ngay')
+            .setCustomId(`instant_delete_ticket|${order?.orderNo || orderNo}`)
+            .setLabel('⚡ Đóng ngay')
             .setStyle(ButtonStyle.Danger)
         );
 
@@ -3815,6 +3821,16 @@ client.on('interactionCreate', async (i) => {
     }
   }
 
+  // --- Nút Đóng Ngay (Xóa kênh lập tức không cần chờ đếm ngược 20s) ---
+  if (i.isButton() && (i.customId === 'instant_delete_ticket' || i.customId.startsWith('instant_delete_ticket|') || i.customId.startsWith('close_simple_ticket'))) {
+    if (autoCloseTimers.has(i.channel.id)) {
+      clearTimeout(autoCloseTimers.get(i.channel.id).timer);
+      autoCloseTimers.delete(i.channel.id);
+    }
+    await i.reply({ content: '⚡ Đang đóng và xóa kênh ngay lập tức...', ephemeral: true }).catch(() => {});
+    return i.channel.delete().catch(e => console.error('Không thể xóa kênh ticket ngay lập tức:', e));
+  }
+
   // --- Unified Close Ticket & Cancel Order (1-Click: Đóng ticket = Hủy đơn hàng) ---
   if (i.isButton() && (
     i.customId.startsWith('close_simple_ticket') ||
@@ -3899,6 +3915,7 @@ client.on('interactionCreate', async (i) => {
     const storeName = getMenuData().storeName || '4AM STORE';
     let closeEmbed;
     let closeComponents = [];
+    const closeUnixTime = Math.floor(Date.now() / 1000) + 20;
 
     if (isSupport) {
       closeEmbed = new EmbedBuilder()
@@ -3910,7 +3927,7 @@ client.on('interactionCreate', async (i) => {
           '',
           `⭐ *Bạn vui lòng bấm nút bên dưới để gửi feedback đánh giá dịch vụ hỗ trợ nhé!*`,
           '',
-          `🔒 **Kênh ticket sẽ tự động đóng sau 15 giây...**`
+          `⏳ **Kênh ticket sẽ tự động đóng và xóa sau 20 giây (vào lúc <t:${closeUnixTime}:R>)...**`
         ].join('\n'))
         .setFooter({ text: `${storeName} • Hỗ trợ 24/7` })
         .setTimestamp();
@@ -3920,33 +3937,14 @@ client.on('interactionCreate', async (i) => {
         .setLabel('⭐ Đánh giá dịch vụ hỗ trợ & Feedback')
         .setStyle(ButtonStyle.Success);
 
-      closeComponents = [new ActionRowBuilder().addComponents(feedbackBtn)];
+      const instantBtn = new ButtonBuilder()
+        .setCustomId('instant_delete_ticket')
+        .setLabel('⚡ Đóng ngay')
+        .setStyle(ButtonStyle.Secondary);
 
-      // Gửi DM cho khách hàng để họ có thể feedback bất cứ lúc nào
-      try {
-        const customerDiscordId = order?.user?.discordId;
-        if (customerDiscordId) {
-          const customerUser = await client.users.fetch(customerDiscordId).catch(() => null);
-          if (customerUser && !customerUser.bot) {
-            const dmEmbed = new EmbedBuilder()
-              .setTitle(`⭐ ĐÁNH GIÁ DỊCH VỤ HỖ TRỢ — ${storeName}`)
-              .setDescription([
-                `Chào <@${customerUser.id}>! Ticket hỗ trợ của bạn tại **${storeName}** đã hoàn tất.`,
-                '',
-                'Vui lòng dành chút thời gian vote sao và gửi feedback giúp shop nhé! ❤️'
-              ].join('\n'))
-              .setColor(0x10B981)
-              .setTimestamp();
-            const dmRow = new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId(`rate_order|${orderNo || 'SUPPORT'}`)
-                .setLabel('⭐ Đánh giá dịch vụ & Feedback')
-                .setStyle(ButtonStyle.Success)
-            );
-            await customerUser.send({ embeds: [dmEmbed], components: [dmRow] }).catch(() => {});
-          }
-        }
-      } catch (_) {}
+      closeComponents = [new ActionRowBuilder().addComponents(feedbackBtn, instantBtn)];
+
+      // KHÔNG gửi tin nhắn riêng (DM) cho khách hàng (theo yêu cầu)
     } else {
       const isAlreadyDone = order && (order.status === 'COMPLETED' || order.status === 'PAID');
       closeEmbed = new EmbedBuilder()
@@ -3956,18 +3954,35 @@ client.on('interactionCreate', async (i) => {
           `Ticket đã được đóng bởi <@${i.user.id}>.`,
           (!isAlreadyDone && orderNo) ? `⚠️ Đơn hàng **#${orderNo}** đã được cập nhật thành **ĐÃ HỦY** trên hệ thống.` : '',
           '',
-          `🔒 **Kênh ticket sẽ tự động đóng và xóa trong 3 giây...**`
+          `⏳ **Kênh ticket sẽ tự động đóng và xóa sau 20 giây (vào lúc <t:${closeUnixTime}:R>)...**`
         ].filter(Boolean).join('\n'))
         .setFooter({ text: '4AM STORE • Quản lý tự động' })
         .setTimestamp();
+
+      const instantBtn = new ButtonBuilder()
+        .setCustomId('instant_delete_ticket')
+        .setLabel('⚡ Đóng ngay')
+        .setStyle(ButtonStyle.Danger);
+
+      closeComponents = [new ActionRowBuilder().addComponents(instantBtn)];
     }
 
     await i.reply({ embeds: [closeEmbed], components: closeComponents });
 
-    const delayMs = isSupport ? 15000 : 3000;
-    setTimeout(() => {
+    const delayMs = 20000;
+    if (autoCloseTimers.has(i.channel.id)) {
+      clearTimeout(autoCloseTimers.get(i.channel.id).timer);
+      autoCloseTimers.delete(i.channel.id);
+    }
+    const timer = setTimeout(() => {
+      autoCloseTimers.delete(i.channel.id);
       i.channel.delete().catch(e => console.error('Không thể xóa kênh ticket:', e));
     }, delayMs);
+
+    autoCloseTimers.set(i.channel.id, {
+      timer,
+      orderNo: orderNo || 'SUPPORT'
+    });
     return;
   }
 
