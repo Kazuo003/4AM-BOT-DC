@@ -1871,13 +1871,8 @@ client.on('interactionCreate', async (i) => {
       mentions.push(`<@&${staffRoleId}>`);
     }
 
-    const hasQuantity = Object.values(cat.items || {}).some(it => {
-      const clean = String(it || '').split('|')[0];
-      const p = String(it || '').split('|')[1] || '';
-      return parseQuantityItemInfo(clean, p, cat).isQuantity;
-    });
     const itemPrompt = buildCategoryItemPrompt(cat, categoryKey, orderDraftNo);
-    const ticketActionRow = buildTicketActionRow(orderDraftNo, categoryKey, hasQuantity);
+    const ticketActionRow = buildTicketActionRow(orderDraftNo, categoryKey, true);
     await ticketChannel.send({
       content: mentions.join(' '),
       embeds: [welcomeEmbed],
@@ -2177,7 +2172,7 @@ client.on('interactionCreate', async (i) => {
         .setColor(0xF1C40F)
         .setTimestamp();
 
-      const ticketActionRow = buildTicketActionRow(orderDraftNo);
+      const ticketActionRow = buildTicketActionRow(orderDraftNo, categoryKey, true);
 
       await i.update({
         components: [updatedPrompt.row, ticketActionRow]
@@ -2464,13 +2459,7 @@ client.on('interactionCreate', async (i) => {
       return i.reply({ content: '❌ Không tìm thấy danh mục này.', ephemeral: true });
     }
 
-    // Transform into the item selector for that category!
-    const hasCatQuantity = Object.values(cat.items || {}).some(it => {
-      const clean = String(it || '').split('|')[0];
-      const p = String(it || '').split('|')[1] || '';
-      return parseQuantityItemInfo(clean, p, cat).isQuantity;
-    });
-    const categoryActionRow = buildTicketActionRow(orderDraftNo, selectedVal, hasCatQuantity);
+    const categoryActionRow = buildTicketActionRow(orderDraftNo, selectedVal, true);
 
     const itemPrompt = buildCategoryItemPrompt(cat, selectedVal, orderDraftNo);
     await i.update({
@@ -3230,8 +3219,7 @@ client.on('interactionCreate', async (i) => {
       adjustEmbed.setImage(dynamicQrUrl);
     }
 
-    const hasQuantity = !!snap.quantity || !!snap.unit;
-    const ticketActionRow = buildTicketActionRow(orderDraftNo, categoryKey, hasQuantity, payosCheckoutUrl);
+    const ticketActionRow = buildTicketActionRow(orderDraftNo, categoryKey, true, payosCheckoutUrl);
 
     // Delete old QR / selection messages
     await deleteTicketQrMessages(i.channel);
