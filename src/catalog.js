@@ -43,7 +43,7 @@ const CATALOG = {
     { name: "1 Năm (BH Full)", sku: "CANVA_PRO_1Y", priceCents: 100000, spec: { duration: "1 năm", warranty: "Full 1 năm", type: "Chính chủ" } }
   ],
   FACEBOOK: [
-    { name: "1 Facebook Link", sku: "FB_DAME_LINK", priceCents: 100000, spec: { unit: "1 link", processTime: "30ph-15h" } }
+    { name: "1 Facebook Link", sku: "FB_DAME_LINK", priceCents: 400000, spec: { unit: "1 link", processTime: "30ph-15h" } }
   ]
 };
 module.exports = { CATALOG, CURRENCY };
