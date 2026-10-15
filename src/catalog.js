@@ -44,6 +44,9 @@ const CATALOG = {
   ],
   FACEBOOK: [
     { name: "1 Facebook Link", sku: "FB_DAME_LINK", priceCents: 400000, spec: { unit: "1 link", processTime: "30ph-15h" } }
+  ],
+  VCC_NITRO: [
+    { name: "1 Lượt Claim", sku: "VCC_CLAIM_NITRO_1", priceCents: 20000, spec: { unit: "1 claim", type: "Login claim", refund: "Hoàn tiền nếu lỗi" } }
   ]
 };
 module.exports = { CATALOG, CURRENCY };
