@@ -1966,6 +1966,7 @@ client.on('interactionCreate', async (i) => {
         currency: 'VNĐ'
       });
       const planSnapshot = {
+        isSupportTicket: true,
         categoryKey: 'support',
         categoryLabel: 'Ticket Hỗ Trợ',
         sellerId: defaultSeller?.id || 'admin',
@@ -1989,7 +1990,7 @@ client.on('interactionCreate', async (i) => {
     const welcomeTitle = (langConf.welcomeTitle || '🎟️ TICKET HỖ TRỢ — {storeName}').replace(/\{storeName\}/g, storeName);
     const rawWelcomeMsg = langConf.welcomeMsg || 'Xin chào <@{userId}>! Cảm ơn bạn đã liên hệ với **{storeName}**.';
     const welcomeMsg = rawWelcomeMsg.replace(/\{userId\}/g, i.user.id).replace(/\{user\}/g, `<@${i.user.id}>`).replace(/\{storeName\}/g, storeName);
-    const welcomeNote = langConf.welcomeNote || '💬 *Vui lòng gửi câu hỏi hoặc dịch vụ bạn muốn tư vấn tại kênh này nhé!*';
+    const welcomeNote = langConf.welcomeNote || '💬 *Vui lòng gửi câu hỏi, yêu cầu bảo hành hoặc vấn đề cần hỗ trợ tại đây nhé!*';
 
     const welcomeEmbed = new EmbedBuilder()
       .setTitle(welcomeTitle)
@@ -2013,17 +2014,36 @@ client.on('interactionCreate', async (i) => {
       generalMentions.push(`<@&${staffRoleId}>`);
     }
 
-    const ticketActionRow = buildTicketActionRow(orderDraftNo);
-    const generalPrompt = buildGeneralTicketPrompt(data.categories || {}, orderDraftNo);
-    const comps = generalPrompt?.row ? [generalPrompt.row, ticketActionRow] : [ticketActionRow];
+    // Support Ticket controls: Only Support & Close Ticket (NO sales/checkout buttons)
+    const supportActionRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`ping_staff_ticket|${orderDraftNo}`)
+        .setLabel('🔔 Gọi Staff')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`close_support_ticket|${orderDraftNo}`)
+        .setLabel('🔒 Đóng Ticket')
+        .setStyle(ButtonStyle.Danger)
+    );
 
     await ticketChannel.send({
       content: generalMentions.join(' '),
       embeds: [welcomeEmbed],
-      components: comps
+      components: [supportActionRow]
     });
 
     return i.editReply({ content: `✅ Đã tạo Ticket hỗ trợ tại: <#${ticketChannel.id}>` });
+  }
+
+  // --- Nút Gọi Staff trong Ticket Hỗ Trợ ---
+  if (i.isButton() && i.customId.startsWith('ping_staff_ticket|')) {
+    const data = getMenuData();
+    const staffRoleId = data.channels?.staffRoleId || process.env.STAFF_ROLE_ID || '1379354084510793799';
+    await i.reply({
+      content: `🔔 <@&${staffRoleId}> ơi, khách hàng <@${i.user.id}> đang cần hỗ trợ tại ticket này!`,
+      allowedMentions: { roles: [staffRoleId], users: [i.user.id] }
+    });
+    return;
   }
 
   // --- Switch Seller / Bank Account in Ticket ---
@@ -3591,12 +3611,24 @@ client.on('interactionCreate', async (i) => {
       const starEmojis = '⭐'.repeat(stars) + (stars < 5 ? '☆'.repeat(5 - stars) : '');
       let parsedSnapshot = {};
       try { parsedSnapshot = JSON.parse(order?.planSnapshotJson || '{}'); } catch (_) {}
-      const serviceName = parsedSnapshot.categoryLabel || order?.product?.name || parsedSnapshot.selectedItem || 'Dịch vụ';
+      const isSupportTicket = order?.product?.type === 'SUPPORT_TICKET' || order?.product?.sku === 'SUPPORT_GENERAL' || parsedSnapshot.categoryKey === 'support' || parsedSnapshot.isSupportTicket;
+      const serviceName = isSupportTicket ? 'Hỗ Trợ Kỹ Thuật & Bảo Hành' : (parsedSnapshot.categoryLabel || order?.product?.name || parsedSnapshot.selectedItem || 'Dịch vụ');
       const formattedAmount = (order?.amountCents || 0).toLocaleString('vi-VN') + ' ' + (order?.currency || 'VNĐ');
       const storeName = getMenuData().storeName || '4AM STORE';
       const logoUrl = getMenuData().logoUrl || undefined;
 
       const feedbackChannelId = process.env.FEEDBACK_CHANNEL_ID || getMenuData().channels?.feedbackChannelId || '1417357717122715668';
+
+      const descLines = [
+        `> *“${comment}”*`,
+        '',
+        `⭐ **Đánh giá:** **${starEmojis}** (${stars}/5 sao)`,
+        isSupportTicket ? `🛠️ **Dịch vụ:** **${serviceName}**` : `📦 **Sản phẩm:** **${serviceName}**`
+      ];
+      if (!isSupportTicket && (order?.amountCents || 0) > 0) {
+        descLines.push(`💰 **Giá trị đơn:** **${formattedAmount}**`);
+      }
+      descLines.push(`👤 **Khách hàng:** <@${i.user.id}>`);
 
       // Tạo embed feedback xịn sò đăng lên kênh feedback công khai
       const feedbackEmbed = new EmbedBuilder()
@@ -3604,15 +3636,8 @@ client.on('interactionCreate', async (i) => {
           name: `${i.user.globalName || i.user.username} (${i.user.tag})`,
           iconURL: i.user.displayAvatarURL({ dynamic: true })
         })
-        .setTitle(`🌟 ĐÁNH GIÁ DỊCH VỤ • #${order?.orderNo || orderNo}`)
-        .setDescription([
-          `> *“${comment}”*`,
-          '',
-          `⭐ **Đánh giá:** **${starEmojis}** (${stars}/5 sao)`,
-          `📦 **Sản phẩm:** **${serviceName}**`,
-          `💰 **Giá trị đơn:** **${formattedAmount}**`,
-          `👤 **Khách hàng:** <@${i.user.id}>`
-        ].join('\n'))
+        .setTitle(isSupportTicket ? `🌟 ĐÁNH GIÁ DỊCH VỤ HỖ TRỢ • #${order?.orderNo || orderNo}` : `🌟 ĐÁNH GIÁ DỊCH VỤ • #${order?.orderNo || orderNo}`)
+        .setDescription(descLines.join('\n'))
         .setColor(stars >= 4 ? 0xF59E0B : 0x0EA5E9)
         .setThumbnail(i.user.displayAvatarURL({ dynamic: true, size: 256 }))
         .setFooter({
@@ -3793,6 +3818,7 @@ client.on('interactionCreate', async (i) => {
   // --- Unified Close Ticket & Cancel Order (1-Click: Đóng ticket = Hủy đơn hàng) ---
   if (i.isButton() && (
     i.customId.startsWith('close_simple_ticket') ||
+    i.customId.startsWith('close_support_ticket|') ||
     i.customId.startsWith('close_ticket_cancel|') ||
     i.customId.startsWith('quick_staff_cancel|') ||
     i.customId.startsWith('customer_confirm_close|') ||
@@ -3814,10 +3840,20 @@ client.on('interactionCreate', async (i) => {
     if (!order) {
       const ticket = await prisma.ticket.findUnique({
         where: { channelId: i.channel.id },
-        include: { order: true }
+        include: { order: { include: { user: true, product: true } } }
       });
       order = ticket?.order;
       if (order && !orderNo) orderNo = order.orderNo;
+    }
+
+    let isSupport = i.customId.startsWith('close_support_ticket|');
+    if (order) {
+      try {
+        const snap = JSON.parse(order.planSnapshotJson || '{}');
+        if (snap.isSupportTicket || snap.categoryKey === 'support' || order.product?.type === 'SUPPORT_TICKET' || order.product?.sku === 'SUPPORT_GENERAL') {
+          isSupport = true;
+        }
+      } catch (_) {}
     }
 
     if (order) {
@@ -3830,8 +3866,14 @@ client.on('interactionCreate', async (i) => {
         });
       }
 
-      // If order is still pending/unsettled: mark CANCELLED (Đóng ticket = Hủy đơn)
-      if (order.status !== 'COMPLETED' && order.status !== 'PAID') {
+      // If support ticket: mark COMPLETED
+      if (isSupport) {
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { status: 'COMPLETED' }
+        });
+      } else if (order.status !== 'COMPLETED' && order.status !== 'PAID') {
+        // Real order: If still pending/unsettled: mark CANCELLED (Đóng ticket = Hủy đơn)
         let snap = {};
         try { snap = JSON.parse(order.planSnapshotJson || '{}'); } catch (_) {}
         snap.cancelledBy = i.user.tag;
@@ -3854,24 +3896,78 @@ client.on('interactionCreate', async (i) => {
       data: { status: 'CLOSED' }
     });
 
-    const isAlreadyDone = order && (order.status === 'COMPLETED' || order.status === 'PAID');
-    const closeEmbed = new EmbedBuilder()
-      .setTitle(isAlreadyDone ? '🔒 TICKET ĐÃ HOÀN TẤT' : '🔒 ĐÃ ĐÓNG TICKET & HỦY ĐƠN HÀNG')
-      .setColor(isAlreadyDone ? 0x10B981 : 0xEF4444)
-      .setDescription([
-        `Ticket đã được đóng bởi <@${i.user.id}>.`,
-        (!isAlreadyDone && orderNo) ? `⚠️ Đơn hàng **#${orderNo}** đã được cập nhật thành **ĐÃ HỦY** trên hệ thống.` : '',
-        '',
-        `🔒 **Kênh ticket sẽ tự động đóng và xóa trong 3 giây...**`
-      ].filter(Boolean).join('\n'))
-      .setFooter({ text: '4AM STORE • Quản lý tự động' })
-      .setTimestamp();
+    const storeName = getMenuData().storeName || '4AM STORE';
+    let closeEmbed;
+    let closeComponents = [];
 
-    await i.reply({ embeds: [closeEmbed] });
+    if (isSupport) {
+      closeEmbed = new EmbedBuilder()
+        .setTitle('🔒 TICKET HỖ TRỢ ĐÃ HOÀN TẤT')
+        .setColor(0x10B981)
+        .setDescription([
+          `Ticket hỗ trợ đã được đóng bởi <@${i.user.id}>.`,
+          `Cảm ơn bạn đã liên hệ **${storeName}**!`,
+          '',
+          `⭐ *Bạn vui lòng bấm nút bên dưới để gửi feedback đánh giá dịch vụ hỗ trợ nhé!*`,
+          '',
+          `🔒 **Kênh ticket sẽ tự động đóng sau 15 giây...**`
+        ].join('\n'))
+        .setFooter({ text: `${storeName} • Hỗ trợ 24/7` })
+        .setTimestamp();
 
+      const feedbackBtn = new ButtonBuilder()
+        .setCustomId(`rate_order|${orderNo || 'SUPPORT'}`)
+        .setLabel('⭐ Đánh giá dịch vụ hỗ trợ & Feedback')
+        .setStyle(ButtonStyle.Success);
+
+      closeComponents = [new ActionRowBuilder().addComponents(feedbackBtn)];
+
+      // Gửi DM cho khách hàng để họ có thể feedback bất cứ lúc nào
+      try {
+        const customerDiscordId = order?.user?.discordId;
+        if (customerDiscordId) {
+          const customerUser = await client.users.fetch(customerDiscordId).catch(() => null);
+          if (customerUser && !customerUser.bot) {
+            const dmEmbed = new EmbedBuilder()
+              .setTitle(`⭐ ĐÁNH GIÁ DỊCH VỤ HỖ TRỢ — ${storeName}`)
+              .setDescription([
+                `Chào <@${customerUser.id}>! Ticket hỗ trợ của bạn tại **${storeName}** đã hoàn tất.`,
+                '',
+                'Vui lòng dành chút thời gian vote sao và gửi feedback giúp shop nhé! ❤️'
+              ].join('\n'))
+              .setColor(0x10B981)
+              .setTimestamp();
+            const dmRow = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`rate_order|${orderNo || 'SUPPORT'}`)
+                .setLabel('⭐ Đánh giá dịch vụ & Feedback')
+                .setStyle(ButtonStyle.Success)
+            );
+            await customerUser.send({ embeds: [dmEmbed], components: [dmRow] }).catch(() => {});
+          }
+        }
+      } catch (_) {}
+    } else {
+      const isAlreadyDone = order && (order.status === 'COMPLETED' || order.status === 'PAID');
+      closeEmbed = new EmbedBuilder()
+        .setTitle(isAlreadyDone ? '🔒 TICKET ĐÃ HOÀN TẤT' : '🔒 ĐÃ ĐÓNG TICKET & HỦY ĐƠN HÀNG')
+        .setColor(isAlreadyDone ? 0x10B981 : 0xEF4444)
+        .setDescription([
+          `Ticket đã được đóng bởi <@${i.user.id}>.`,
+          (!isAlreadyDone && orderNo) ? `⚠️ Đơn hàng **#${orderNo}** đã được cập nhật thành **ĐÃ HỦY** trên hệ thống.` : '',
+          '',
+          `🔒 **Kênh ticket sẽ tự động đóng và xóa trong 3 giây...**`
+        ].filter(Boolean).join('\n'))
+        .setFooter({ text: '4AM STORE • Quản lý tự động' })
+        .setTimestamp();
+    }
+
+    await i.reply({ embeds: [closeEmbed], components: closeComponents });
+
+    const delayMs = isSupport ? 15000 : 3000;
     setTimeout(() => {
       i.channel.delete().catch(e => console.error('Không thể xóa kênh ticket:', e));
-    }, 3000);
+    }, delayMs);
     return;
   }
 
