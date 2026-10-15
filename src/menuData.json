@@ -170,6 +170,25 @@
         "6 Tháng | 165.000đ",
         "12 Tháng | 300.000đ"
       ]
+    },
+    "canva": {
+      "label": "Canva Pro",
+      "emoji": "<:4am_canva:1468924722183143520>",
+      "title": "<:4am_canva:1468924722183143520> BẢNG GIÁ CANVA PRO",
+      "titleEn": "CANVA PRO",
+      "subtitle": "• Nâng cấp trực tiếp trên tài khoản cá nhân chính chủ\n• Mở khóa full tính năng Canva Pro, kho tài nguyên & công cụ AI\n• Bảo hành Full 100% trọn thời gian sử dụng của gói",
+      "subtitleEn": "• Upgrade directly on your personal account\n• Full Canva Pro features, design assets & AI tools\n• 100% Full warranty throughout subscription duration",
+      "bannerUrl": "https://media.discordapp.net/attachments/1549013116145111050/1549026763089252443/3aa46f5701fc6ed92234ea0a9f86e2cd.gif?ex=6ad01757&is=6acec5d7&hm=c26b4f8582f2eb174e4ed2651fdce47951805970880019f6e2f8f39c2ac6cd24&=&width=640&height=356",
+      "color": "#00C4CC",
+      "seller": "shop_common",
+      "handlers": [],
+      "accountIndex": "0",
+      "pingStaff": true,
+      "enabled": true,
+      "items": [
+        "1 Tháng (BH Full) | 10.000đ",
+        "1 Năm (BH Full) | 100.000đ"
+      ]
     }
   },
   "channels": {

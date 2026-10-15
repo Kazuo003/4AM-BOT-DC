@@ -37,6 +37,10 @@ const CATALOG = {
     { name: "1 Tháng", sku: "SPOTIFY_1M", priceCents: 30000, spec: { duration: "1 tháng", warranty: "Full thời gian", type: "Chính chủ" } },
     { name: "6 Tháng", sku: "SPOTIFY_6M", priceCents: 165000, spec: { duration: "6 tháng", warranty: "Full thời gian", type: "Chính chủ" } },
     { name: "12 Tháng", sku: "SPOTIFY_12M", priceCents: 300000, spec: { duration: "12 tháng", warranty: "Full thời gian", type: "Chính chủ" } }
+  ],
+  CANVA: [
+    { name: "1 Tháng (BH Full)", sku: "CANVA_PRO_1M", priceCents: 10000, spec: { duration: "1 tháng", warranty: "Full 1 tháng", type: "Chính chủ" } },
+    { name: "1 Năm (BH Full)", sku: "CANVA_PRO_1Y", priceCents: 100000, spec: { duration: "1 năm", warranty: "Full 1 năm", type: "Chính chủ" } }
   ]
 };
 module.exports = { CATALOG, CURRENCY };
