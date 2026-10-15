@@ -105,7 +105,35 @@ const commands = [
   new SlashCommandBuilder()
     .setName('setup-bilingual')
     .setDescription('Admin: Tự động khởi tạo & phân quyền hệ thống server song ngữ (Roles, Kênh, Permissions)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+
+  // Auto Response management
+  new SlashCommandBuilder()
+    .setName('autoresponse')
+    .setDescription('Admin: Quản lý tự động trả lời tin nhắn theo từ khóa (Auto Response)')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addSubcommand(sub =>
+      sub.setName('add')
+        .setDescription('Thêm hoặc cập nhật phản hồi tự động')
+        .addStringOption(opt => opt.setName('trigger').setDescription('Từ khóa kích hoạt (VD: A, stk, owo...)').setRequired(true))
+        .addStringOption(opt => opt.setName('response').setDescription('Nội dung văn bản phản hồi').setRequired(true))
+        .addStringOption(opt => opt.setName('image').setDescription('Link ảnh hoặc GIF đính kèm (tùy chọn)').setRequired(false))
+        .addStringOption(opt => opt.setName('match_type').setDescription('Cách so khớp (mặc định: chính xác)')
+          .setRequired(false)
+          .addChoices(
+            { name: 'Khớp chính xác (exact)', value: 'exact' },
+            { name: 'Tin nhắn có chứa (contains)', value: 'contains' }
+          ))
+    )
+    .addSubcommand(sub =>
+      sub.setName('list')
+        .setDescription('Xem danh sách các phản hồi tự động')
+    )
+    .addSubcommand(sub =>
+      sub.setName('delete')
+        .setDescription('Xóa phản hồi tự động theo từ khóa')
+        .addStringOption(opt => opt.setName('trigger').setDescription('Từ khóa cần xóa').setRequired(true))
+    )
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);

@@ -1,6 +1,17 @@
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { GpmPay, GpmPayError, GpmPayConfigError } = require('@gpmpay/sdk');
+const {
+  constructWebhookEvent,
+  gpmpayWebhook,
+  signWebhookPayload,
+  GpmPayWebhookSignatureError
+} = require('@gpmpay/sdk/webhooks');
+const {
+  buildVietQrImageUrl,
+  buildVietQrPayload,
+  buildPaymentInstructions
+} = require('@gpmpay/sdk/vietqr');
 const { prisma } = require('../db');
 const { updateOrderStatus } = require('../order');
 
@@ -37,61 +48,111 @@ function writeLedger(records) {
   }
 }
 
-/**
- * Kiểm tra chữ ký HMAC SHA256 của Webhook
- * @param {string|Buffer} rawBody - Nội dung thô của request
- * @param {string} signature - Chữ ký nhận được từ header hoặc body
- * @param {string} secret - Khóa bí mật cấu hình trong .env
- */
-function verifyHmacSignature(rawBody, signature, secret) {
-  if (!secret || !signature) return false;
-  try {
-    const computed = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-    const signatureBuffer = Buffer.from(signature.trim().toLowerCase(), 'hex');
-    const computedBuffer = Buffer.from(computed.toLowerCase(), 'hex');
+const BANK_BINS = {
+  'vietcombank': '970436',
+  'vcb': '970436',
+  'vietinbank': '970415',
+  'icb': '970415',
+  'bidv': '970418',
+  'techcombank': '970407',
+  'tcb': '970407',
+  'acb': '970416',
+  'vpbank': '970432',
+  'vpb': '970432',
+  'tpbank': '970458',
+  'tpb': '970458',
+  'sacombank': '970403',
+  'stb': '970403',
+  'hdbank': '970437',
+  'hdb': '970437',
+  'vib': '970441',
+  'shb': '970443',
+  'seabank': '970440',
+  'msb': '970426',
+  'ocb': '970448',
+  'agribank': '970405',
+  'vba': '970405',
+  'cake': '546034',
+  'timo': '963388',
+  'namabank': '970428',
+  'lpbank': '970449',
+  'mbbank': '970422',
+  'mb': '970422'
+};
 
-    if (signatureBuffer.length !== computedBuffer.length) {
-      return false;
-    }
-    return crypto.timingSafeEqual(signatureBuffer, computedBuffer);
-  } catch (err) {
-    console.error('⚠️ [GPM Pay] Lỗi xác thực chữ ký HMAC:', err.message);
-    return false;
+/**
+ * Phân giải mã BIN ngân hàng từ tên ngân hàng (chuẩn VietQR)
+ */
+function resolveBankBin(bankName) {
+  if (!bankName) return '970422'; // mặc định MB Bank
+  const clean = String(bankName).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const sorted = Object.keys(BANK_BINS).sort((a, b) => b.length - a.length);
+  for (const k of sorted) {
+    if (clean.includes(k)) return BANK_BINS[k];
   }
+  return '970422';
+}
+
+/**
+ * Khởi tạo GPM Pay client (Node.js SDK)
+ */
+let gpmPayClient = null;
+function getGpmPayClient() {
+  const token = process.env.GPMPAY_API_TOKEN;
+  if (!token) {
+    throw new GpmPayConfigError('Missing required environment variable: GPMPAY_API_TOKEN. Vui lòng cấu hình GPMPAY_API_TOKEN trong .env.');
+  }
+  if (!gpmPayClient) {
+    gpmPayClient = new GpmPay({ apiToken: token });
+  }
+  return gpmPayClient;
 }
 
 /**
  * Trích xuất mã đơn hàng từ chuỗi nội dung chuyển khoản
- * Ví dụ: "4AM ABC12345" -> "ABC12345", hoặc "ABC12345"
+ * Khớp mã dạng: "4AM ABC12345", "4AM_ABC12345" hoặc mã đơn hàng 8 ký tự nanoid
  */
 function extractOrderCode(content) {
   if (!content || typeof content !== 'string') return null;
-  const match = content.match(/(?:4AM[\s_-]*)?([A-Za-z0-9_-]{8,12})/i);
+  const match = content.match(/4AM[\s_-]*([A-Za-z0-9]{6,12})/i) || content.match(/\b([A-Za-z0-9]{8})\b/i);
   return match ? match[1].toUpperCase() : null;
 }
 
 /**
- * Xử lý webhook thanh toán GPM Pay với Idempotency, đối soát mã đơn, số tiền và STK nhận
- * @param {Object} payload - Dữ liệu webhook parse từ GPM Pay
- * @param {Object} options - Tùy chọn xác minh và callback
+ * Xử lý sự kiện thanh toán từ GPM Pay Webhook (Payload đã qua xác thực chữ ký HMAC của SDK)
+ * Tuân thủ nguyên tắc:
+ * 1. Thoát sớm nếu là test ping (khi merchant đăng ký endpoint)
+ * 2. Chỉ nhận transferType === 'in'
+ * 3. Idempotency theo payload.id
+ * 4. So khớp số tiền (số nguyên VND)
+ * 5. Cập nhật DB & gọi callback
  */
 async function processGpmWebhook(payload, options = {}) {
-  const isEnabled = process.env.GPM_PAY_ENABLED === 'true';
-  const { onOrderPaid, getValidReceivingAccounts } = options;
+  const { onOrderPaid, getValidReceivingAccounts, source = 'WEBHOOK', requireReceivingAccount = false } = options;
 
-  // Trích xuất các trường thông dụng từ payload
-  const transactionId = String(payload.transaction_id || payload.ref_no || payload.id || payload.trans_id || '').trim();
-  const rawContent = String(payload.content || payload.description || payload.memo || payload.note || '').trim();
-  const transferAmount = Math.max(0, parseInt(payload.amount || payload.transfer_amount || 0, 10));
-  const receivingAccount = String(payload.account_number || payload.receiver_account || payload.bank_account || '').trim();
-
-  if (!transactionId) {
-    return { ok: false, code: 'MISSING_TRANSACTION_ID', message: 'Thiếu transaction_id trong webhook payload' };
+  // 1. Thoát sớm nếu là gói tin test ping khi tạo webhook endpoint
+  if (payload.test === true || payload.referenceCode === 'GPMPAY-VERIFY') {
+    console.log('ℹ️ [GPM Pay] Nhận gói tin ping kiểm tra kết nối từ GPM Pay.');
+    return { ok: true, test: true, message: 'Ping test verified' };
   }
 
-  // 1. Kiểm tra Idempotency chống xử lý lặp
-  const ledger = readLedger();
-  const existingRecord = ledger.find(item => item.transactionId === transactionId);
+  // 2. Chỉ xử lý tiền vào (transferType === 'in')
+  if (payload.transferType && payload.transferType !== 'in') {
+    return { ok: true, ignored: true, message: `Bỏ qua giao dịch transferType=${payload.transferType}` };
+  }
+
+  const transactionId = String(payload.id || payload.transaction_id || '').trim();
+  const rawContent = String(payload.content || '').trim();
+  const transferAmount = Math.max(0, Math.round(Number(payload.transferAmount || payload.amount || 0)));
+  const receivingAccount = String(payload.accountNumber || payload.account_number || '').trim();
+
+  if (!transactionId) {
+    return { ok: false, code: 'MISSING_TRANSACTION_ID', message: 'Thiếu transaction id trong webhook payload' };
+  }
+
+  // 3. Idempotency is stored in the database so it also works across restarts
+  // and multiple bot processes.
+  const existingRecord = await prisma.paymentTransaction.findUnique({ where: { transactionId } });
 
   if (existingRecord) {
     console.log(`ℹ️ [GPM Pay] Bỏ qua webhook trùng lặp (Idempotency Hit): ${transactionId}`);
@@ -104,157 +165,124 @@ async function processGpmWebhook(payload, options = {}) {
     };
   }
 
-  // 2. Trích xuất mã đơn hàng
+  // 4. Trích xuất mã đơn hàng từ nội dung chuyển khoản
   const orderCode = extractOrderCode(rawContent);
   if (!orderCode) {
-    const record = {
-      transactionId,
-      orderNo: null,
-      amount: transferAmount,
-      receivingAccount,
-      status: 'UNKNOWN_ORDER_CODE',
-      rawPayload: payload,
-      processedAt: new Date().toISOString()
-    };
-    ledger.push(record);
-    writeLedger(ledger);
+    await prisma.paymentTransaction.create({ data: {
+      transactionId, orderNo: null, amount: transferAmount, receivingAccount: receivingAccount || null,
+      status: 'UNKNOWN_ORDER_CODE', source, rawPayloadJson: JSON.stringify(payload)
+    }});
     return { ok: false, code: 'UNKNOWN_ORDER_CODE', message: `Không tìm thấy mã đơn trong nội dung: "${rawContent}"` };
   }
 
-  // 3. Tra cứu đơn hàng trong Database
+  // 5. Tra cứu đơn hàng trong cơ sở dữ liệu
   const order = await prisma.order.findUnique({
     where: { orderNo: orderCode },
     include: { user: true, product: true, ticket: true }
   });
 
   if (!order) {
-    const record = {
-      transactionId,
-      orderNo: orderCode,
-      amount: transferAmount,
-      receivingAccount,
-      status: 'ORDER_NOT_FOUND',
-      rawPayload: payload,
-      processedAt: new Date().toISOString()
-    };
-    ledger.push(record);
-    writeLedger(ledger);
+    await prisma.paymentTransaction.create({ data: {
+      transactionId, orderNo: orderCode, amount: transferAmount, receivingAccount: receivingAccount || null,
+      status: 'ORDER_NOT_FOUND', source, rawPayloadJson: JSON.stringify(payload)
+    }});
     return { ok: false, code: 'ORDER_NOT_FOUND', message: `Không tìm thấy đơn hàng #${orderCode} trong cơ sở dữ liệu.` };
   }
 
-  // Nếu đơn đã được duyệt thanh toán trước đó
+  // Nếu đơn hàng đã hoàn tất trước đó
   if (order.status === 'PAID' || order.status === 'COMPLETED') {
-    const record = {
-      transactionId,
-      orderNo: orderCode,
-      orderId: order.id,
-      amount: transferAmount,
-      receivingAccount,
-      status: 'ORDER_ALREADY_PAID',
-      rawPayload: payload,
-      processedAt: new Date().toISOString()
-    };
-    ledger.push(record);
-    writeLedger(ledger);
+    await prisma.paymentTransaction.create({ data: {
+      transactionId, orderNo: orderCode, orderId: order.id, amount: transferAmount,
+      expectedAmount: order.amountCents, receivingAccount: receivingAccount || null,
+      status: 'ORDER_ALREADY_PAID', source, rawPayloadJson: JSON.stringify(payload)
+    }});
     return { ok: true, duplicate: true, code: 'ORDER_ALREADY_PAID', message: `Đơn #${orderCode} đã ở trạng thái ${order.status}.` };
   }
 
-  // 4. Kiểm tra tài khoản nhận (Receiving Account Validation)
-  if (typeof getValidReceivingAccounts === 'function' && receivingAccount) {
-    const validAccounts = getValidReceivingAccounts();
-    const isAccountValid = validAccounts.some(acc => acc.replace(/\s+/g, '') === receivingAccount.replace(/\s+/g, ''));
+  // 6. Kiểm tra tài khoản nhận nếu có cấu hình
+  if (typeof getValidReceivingAccounts === 'function') {
+    const validAccounts = getValidReceivingAccounts().map(acc => String(acc).replace(/\s+/g, '')).filter(Boolean);
+    if (requireReceivingAccount && validAccounts.length === 0) {
+      await prisma.paymentTransaction.create({ data: {
+        transactionId, orderNo: orderCode, orderId: order.id, amount: transferAmount,
+        expectedAmount: order.amountCents, receivingAccount: receivingAccount || null,
+        status: 'PAYMENT_CONFIG_ERROR', source, rawPayloadJson: JSON.stringify(payload)
+      }});
+      return { ok: false, code: 'PAYMENT_CONFIG_ERROR', message: 'Chưa cấu hình tài khoản nhận hợp lệ; giao dịch cần đối soát thủ công.' };
+    }
+    if (requireReceivingAccount && !receivingAccount) {
+      await prisma.paymentTransaction.create({ data: {
+        transactionId, orderNo: orderCode, orderId: order.id, amount: transferAmount,
+        expectedAmount: order.amountCents, receivingAccount: null,
+        status: 'MISSING_RECEIVING_ACCOUNT', source, rawPayloadJson: JSON.stringify(payload)
+      }});
+      return { ok: false, code: 'MISSING_RECEIVING_ACCOUNT', message: 'Giao dịch không có thông tin tài khoản nhận; cần đối soát thủ công.' };
+    }
+    if (receivingAccount) {
+    const isAccountValid = validAccounts.includes(receivingAccount.replace(/\s+/g, ''));
     if (!isAccountValid && validAccounts.length > 0) {
-      const record = {
-        transactionId,
-        orderNo: orderCode,
-        orderId: order.id,
-        amount: transferAmount,
-        receivingAccount,
-        status: 'UNAUTHORIZED_RECEIVER_ACCOUNT',
-        rawPayload: payload,
-        processedAt: new Date().toISOString()
-      };
-      ledger.push(record);
-      writeLedger(ledger);
+      await prisma.paymentTransaction.create({ data: {
+        transactionId, orderNo: orderCode, orderId: order.id, amount: transferAmount,
+        expectedAmount: order.amountCents, receivingAccount,
+        status: 'UNAUTHORIZED_RECEIVER_ACCOUNT', source, rawPayloadJson: JSON.stringify(payload)
+      }});
       return {
         ok: false,
         code: 'UNAUTHORIZED_RECEIVER_ACCOUNT',
         message: `Tài khoản nhận ${receivingAccount} không thuộc danh sách STK hợp lệ của cửa hàng.`
       };
     }
+    }
   }
 
-  // 5. Kiểm tra số tiền chuyển khoản
-  // Nếu đơn hàng có giá cố định > 0 và số tiền khách chuyển < giá trị đơn
-  if (order.amountCents > 0 && transferAmount < order.amountCents) {
-    const record = {
-      transactionId,
-      orderNo: orderCode,
-      orderId: order.id,
-      expectedAmount: order.amountCents,
-      amount: transferAmount,
-      receivingAccount,
-      status: 'PARTIAL_AMOUNT',
-      rawPayload: payload,
-      processedAt: new Date().toISOString()
-    };
-    ledger.push(record);
-    writeLedger(ledger);
+  // 7. Chỉ xác nhận khi số tiền khớp tuyệt đối. Payment của đơn vẫn chỉ có hai trạng thái:
+  // chưa thanh toán hoặc đã thanh toán; giao dịch lệch tiền chỉ được lưu như lỗi kỹ thuật.
+  if (order.amountCents > 0 && transferAmount !== order.amountCents) {
+    await prisma.paymentTransaction.create({ data: {
+      transactionId, orderNo: orderCode, orderId: order.id, expectedAmount: order.amountCents,
+      amount: transferAmount, receivingAccount: receivingAccount || null,
+      status: 'AMOUNT_MISMATCH', source, rawPayloadJson: JSON.stringify(payload)
+    }});
+    console.warn(`⚠️ [GPM Pay] Đơn #${orderCode} có số tiền giao dịch không khớp số tiền đơn.`);
     return {
       ok: false,
-      code: 'PARTIAL_AMOUNT',
-      message: `Số tiền nhận (${transferAmount} VNĐ) nhỏ hơn giá trị đơn hàng (${order.amountCents} VNĐ). Cần đối soát thủ công.`
+      code: 'AMOUNT_MISMATCH',
+      message: 'Số tiền giao dịch không khớp số tiền đơn hàng. Đơn vẫn ở trạng thái chưa thanh toán.'
     };
   }
 
-  // 6. Nếu chế độ GPM Pay chưa bật live, ghi log an toàn mà không thay đổi DB
-  if (!isEnabled) {
-    console.log(`[GPM Pay SIMULATION] Giao dịch hợp lệ nhưng GPM_PAY_ENABLED=false (Sandbox). Order #${orderCode}, Số tiền: ${transferAmount}`);
-    const record = {
-      transactionId,
-      orderNo: orderCode,
-      orderId: order.id,
-      amount: transferAmount,
-      receivingAccount,
-      status: 'SIMULATION_VERIFIED',
-      rawPayload: payload,
-      processedAt: new Date().toISOString()
-    };
-    ledger.push(record);
-    writeLedger(ledger);
-    return {
-      ok: true,
-      simulation: true,
-      order,
-      message: `[Sandbox] Đã xác thực giao dịch thành công cho đơn #${orderCode}. Hệ thống đang ở chế độ an toàn (chưa kích hoạt DB live).`
-    };
+  // 8. Cập nhật trạng thái đơn hàng sang PAID & ghi nhận sổ cái
+  let updatedOrder;
+  try {
+    updatedOrder = await prisma.$transaction(async tx => {
+      await tx.paymentTransaction.create({ data: {
+        transactionId, orderNo: orderCode, orderId: order.id, expectedAmount: order.amountCents,
+        amount: transferAmount, receivingAccount: receivingAccount || null,
+        status: 'SUCCESS', source, rawPayloadJson: JSON.stringify(payload)
+      }});
+      const updated = await tx.order.update({
+        where: { id: order.id },
+        data: { status: 'PAID', paymentProvider: 'GPM_PAY_AUTO', providerRef: `GPM_${transactionId}` },
+        include: { user: true, product: true, ticket: true }
+      });
+      await tx.auditLog.create({ data: {
+        orderId: order.id, actorType: 'SYSTEM', actorId: source, action: 'PAYMENT_CONFIRMED',
+        beforeJson: JSON.stringify({ status: order.status }),
+        afterJson: JSON.stringify({ status: 'PAID', transactionId, amount: transferAmount })
+      }});
+      return updated;
+    });
+  } catch (err) {
+    if (err?.code === 'P2002') {
+      return { ok: true, duplicate: true, code: 'ALREADY_PROCESSED', message: 'Giao dịch đã được ghi nhận trước đó.' };
+    }
+    throw err;
   }
 
-  // 7. Cập nhật trạng thái đơn hàng sang PAID & ghi nhận sổ cái
-  const updatedOrder = await updateOrderStatus(
-    order.id,
-    'PAID',
-    'GPM_PAY_AUTO',
-    `GPM_TRANS_${transactionId}`
-  );
-
-  const record = {
-    transactionId,
-    orderNo: orderCode,
-    orderId: order.id,
-    amount: transferAmount,
-    receivingAccount,
-    status: 'SUCCESS',
-    rawPayload: payload,
-    processedAt: new Date().toISOString()
-  };
-  ledger.push(record);
-  writeLedger(ledger);
-
-  // Kích hoạt callback nếu có (ví dụ thông báo Discord, cấp role, tạo subscription)
+  // Kích hoạt callback nghiệp vụ (Discord notification, role, subscription)
   if (typeof onOrderPaid === 'function') {
     try {
-      await onOrderPaid(updatedOrder, { transactionId, transferAmount });
+      await onOrderPaid(updatedOrder, { transactionId, transferAmount, receivingAccount, rawContent });
     } catch (cbErr) {
       console.error('⚠️ [GPM Pay] Lỗi khi chạy callback sau thanh toán:', cbErr);
     }
@@ -267,10 +295,33 @@ async function processGpmWebhook(payload, options = {}) {
   };
 }
 
+/**
+ * Hàm hỗ trợ kiểm tra chữ ký HMAC (sử dụng SDK constructWebhookEvent)
+ */
+function verifyHmacSignature(rawBody, signature, secret) {
+  if (!secret || !signature) return false;
+  try {
+    constructWebhookEvent({ rawBody, signature, secret });
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
 module.exports = {
+  GpmPay,
+  getGpmPayClient,
+  constructWebhookEvent,
+  gpmpayWebhook,
+  signWebhookPayload,
+  buildVietQrImageUrl,
+  buildVietQrPayload,
+  buildPaymentInstructions,
+  resolveBankBin,
   verifyHmacSignature,
   extractOrderCode,
   processGpmWebhook,
   readLedger,
+  writeLedger,
   LEDGER_FILE
 };

@@ -59,6 +59,16 @@ Sell VPS/Bot/Web hosting **entirely inside Discord**. Customers create a ticket,
 
 ---
 
+## 🖥️ Dashboard UI
+
+- Dashboard 4AM mới đã thay thế hoàn toàn dashboard cũ và được phục vụ ngay tại `/`.
+- Chế độ xem dữ liệu mẫu: `/?demo=1`.
+- UI là HTML/CSS/JavaScript tĩnh trong `public/`, không cần React hay bước build để chạy.
+- Adapter tại `public/js/api.js` chuyển đổi an toàn giữa model UI và cấu trúc `menuData`/order legacy của bot.
+- Hướng dẫn tích hợp và checklist kiểm thử: `docs/dashboard.md`.
+
+---
+
 ## 📁 Project Structure
 
 ```

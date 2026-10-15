@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -50,11 +51,48 @@ model Order {
   providerRef      String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+  archivedAt       DateTime?
   ticket           Ticket?
+  payments         PaymentTransaction[]
+  auditLogs        AuditLog[]
 
   subscription Subscription? @relation("LastOrder") // 👈 keep only this one!
 
   @@index([status])
+}
+
+model PaymentTransaction {
+  id               String   @id @default(cuid())
+  transactionId    String   @unique
+  orderId           String?
+  orderNo           String?
+  amount            Int
+  expectedAmount    Int?
+  receivingAccount String?
+  status            String
+  source            String
+  rawPayloadJson    String
+  processedAt       DateTime @default(now())
+  order              Order?  @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([status])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  orderId    String?
+  actorType  String
+  actorId    String?
+  action     String
+  beforeJson String?
+  afterJson  String?
+  metadataJson String?
+  createdAt  DateTime @default(now())
+  order      Order?   @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([createdAt])
 }
 
 model Ticket {

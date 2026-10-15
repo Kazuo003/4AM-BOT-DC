@@ -1,39 +1,22 @@
-/** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: [
-    './public/**/*.{html,js}',
-    './src/**/*.{html,js}'
+  content: ["./public/index.html", "./public/js/**/*.js"],
+  safelist: [
+    'badge', 'b-neutral', 'b-brand', 'b-success', 'b-warning', 'b-danger', 'b-info',
+    'btn-warn'
   ],
-  darkMode: 'class',
   theme: {
     extend: {
-      fontFamily: {
-        sans: ['var(--font-ui)', 'system-ui', '-apple-system', 'sans-serif'],
-        mono: ['var(--font-data)', 'ui-monospace', 'monospace']
-      },
       colors: {
-        brand: {
-          50: '#EEF0FD',
-          100: '#D5D8FB',
-          400: '#727EF6',
-          500: '#5865F2',
-          600: '#4752C4',
-          700: '#3C45A5'
-        },
-        canvas: '#0A0B0E',
-        surface: {
-          DEFAULT: '#13151B',
-          subtle: '#0E1015',
-          elevated: '#1A1D25',
-          card: '#15171F'
-        },
-        border: {
-          subtle: 'rgba(255, 255, 255, 0.06)',
-          DEFAULT: 'rgba(255, 255, 255, 0.1)',
-          focus: 'rgba(88, 101, 242, 0.5)'
-        }
-      }
-    }
+        canvas: "var(--canvas)",
+        surface: { 1: "var(--surface-1)", 2: "var(--surface-2)", 3: "var(--surface-3)" },
+        brand: { DEFAULT: "#5865F2", hover: "#6874F7", dark: "#4752C4", light: "#727EF6", soft: "var(--brand-soft)" },
+        success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", info: "var(--info)",
+        ink: { DEFAULT: "var(--text-primary)", 2: "var(--text-secondary)", 3: "var(--text-muted)" },
+      },
+      borderColor: { subtle: "var(--border-subtle)", DEFAULT: "var(--border-default)", strong: "var(--border-strong)" },
+      fontFamily: { sans: ["Plus Jakarta Sans", "system-ui", "sans-serif"], mono: ["Plus Jakarta Sans", "system-ui", "sans-serif"] },
+      borderRadius: { DEFAULT: "10px", lg: "14px" },
+    },
   },
-  plugins: []
+  plugins: [],
 };

@@ -10,9 +10,13 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev --name init",
     "register": "node src/commands.js",
+    "seed:ui-test": "node scripts/seed-ui-test-data.js --confirm-reset",
+    "test": "node scripts/test-payment-safety.js",
     "build:css": "tailwindcss -i ./public/css/input.css -o ./public/css/dashboard.css --minify"
   },
   "dependencies": {
+    "@gpmpay/sdk": "^0.4.0",
+    "@payos/node": "^2.0.5",
     "@prisma/client": "^5.18.0",
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",
