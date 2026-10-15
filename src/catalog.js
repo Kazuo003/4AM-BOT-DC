@@ -26,6 +26,12 @@ const CATALOG = {
   CHATGPT: [
     { name: "1 Tháng (Riêng Tư - BH 24H)", sku: "CHATGPT_PLUS_24H", priceCents: 170000, spec: { duration: "1 tháng", type: "Riêng tư", warranty: "24h" } },
     { name: "1 Tháng (Riêng Tư - BH Full)", sku: "CHATGPT_PLUS_FULL", priceCents: 300000, spec: { duration: "1 tháng", type: "Riêng tư", warranty: "Full tháng" } }
+  ],
+  GEMINI: [
+    { name: "Gemini 5TB (18T - Ko BH)", sku: "GEMINI_5TB_NO_WARRANTY", priceCents: 30000, spec: { duration: "18 tháng", storage: "5TB", warranty: "Không BH", type: "Tài khoản" } },
+    { name: "Gemini 5TB (18T - BH Full)", sku: "GEMINI_5TB_FULL_WARRANTY", priceCents: 150000, spec: { duration: "18 tháng", storage: "5TB", warranty: "Full 18 tháng", type: "Tài khoản" } },
+    { name: "Add Fam 5TB (18T - Ko BH)", sku: "GEMINI_FAM_NO_WARRANTY", priceCents: 15000, spec: { duration: "18 tháng", storage: "5TB", warranty: "Không BH", type: "Add Family" } },
+    { name: "Add Fam 5TB (18T - BH Full)", sku: "GEMINI_FAM_FULL_WARRANTY", priceCents: 75000, spec: { duration: "18 tháng", storage: "5TB", warranty: "Full 18 tháng", type: "Add Family" } }
   ]
 };
 module.exports = { CATALOG, CURRENCY };
