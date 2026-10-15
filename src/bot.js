@@ -1683,7 +1683,11 @@ client.on('interactionCreate', async (i) => {
     const rawSubtitle = cat.subtitle || '';
     let noteLine = '';
     if (rawSubtitle && rawSubtitle.trim()) {
-      noteLine = `-# ${rawSubtitle.trim()}`;
+      noteLine = rawSubtitle.trim().split('\n').map(l => {
+        const trimmed = l.trim();
+        if (!trimmed) return '';
+        return trimmed.startsWith('-#') ? trimmed : `-# ${trimmed}`;
+      }).filter(Boolean).join('\n');
     }
 
     const { seller, handlers } = getSellerForCategory(selectedKey);
