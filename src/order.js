@@ -17,7 +17,12 @@ async function ensureUser(discordId, email, name, country) {
 
 async function findOrCreateProduct({ type, name, sku, specJson, priceCents, currency }) {
   const existing = await prisma.product.findUnique({ where: { sku } });
-  if (existing) return existing;
+  if (existing) {
+    return prisma.product.update({
+      where: { sku },
+      data: { name, type, specJson, priceCents, currency, active: true }
+    });
+  }
   return prisma.product.create({ data: { type, name, sku, specJson, priceCents, currency, active: true } });
 }
 

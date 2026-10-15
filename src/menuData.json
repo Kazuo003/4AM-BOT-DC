@@ -100,15 +100,15 @@
       "pingStaff": true,
       "enabled": true,
       "items": [
-        "TRIAL 2-1 (2 Core / 1GB RAM / 30GB SSD) | 55.000đ",
-        "TRIAL 1-2 (1 Core / 2GB RAM / 50GB SSD) | 70.000đ",
-        "TRIAL 2-4 (2 Core / 4GB RAM / 30-80GB SSD) | 100.000đ",
-        "TRIAL 2-8 (2 Core / 8GB RAM / 30-60GB SSD) | 140.000đ",
-        "TRIAL 4-8 (4 Core / 8GB RAM / 160GB SSD) | 160.000đ",
-        "TRIAL 4-16 (4 Core / 16GB RAM / 120GB SSD) | 220.000đ",
-        "TRIAL 6-16 (6 Core / 16GB RAM / 320GB SSD) | 260.000đ",
-        "TRIAL 8-16 (8 Core / 16GB RAM / 200-350GB SSD) | 300.000đ",
-        "TRIAL 8-32 (8 Core / 32GB RAM / 250-640GB SSD) | 380.000đ"
+        "TRIAL 2-1 (SSD 30GB) | 55.000đ",
+        "TRIAL 1-2 (SSD 50GB) | 70.000đ",
+        "TRIAL 2-4 (SSD 30-80GB) | 100.000đ",
+        "TRIAL 2-8 (SSD 30-60GB) | 140.000đ",
+        "TRIAL 4-8 (SSD 160GB) | 160.000đ",
+        "TRIAL 4-16 (SSD 120GB) | 220.000đ",
+        "TRIAL 6-16 (SSD 320GB) | 260.000đ",
+        "TRIAL 8-16 (SSD 200-350GB) | 300.000đ",
+        "TRIAL 8-32 (SSD 250-640GB) | 380.000đ"
       ]
     }
   },
