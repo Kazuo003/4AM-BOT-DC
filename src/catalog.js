@@ -24,8 +24,8 @@ const CATALOG = {
     { name: "TRIAL 8-32 (SSD 250-640GB)", sku: "TRIAL_8_32", priceCents: 380000, spec: { vcpu: 8, ramGB: 32, diskGB: 640, os: "Windows / Linux" } }
   ],
   CHATGPT: [
-    { name: "ChatGPT Plus 1 Tháng (Riêng Tư - BH 24H)", sku: "CHATGPT_PLUS_24H", priceCents: 170000, spec: { duration: "1 tháng", type: "Riêng tư", warranty: "24h" } },
-    { name: "ChatGPT Plus 1 Tháng (Riêng Tư - BH Full)", sku: "CHATGPT_PLUS_FULL", priceCents: 300000, spec: { duration: "1 tháng", type: "Riêng tư", warranty: "Full tháng" } }
+    { name: "1 Tháng (Riêng Tư - BH 24H)", sku: "CHATGPT_PLUS_24H", priceCents: 170000, spec: { duration: "1 tháng", type: "Riêng tư", warranty: "24h" } },
+    { name: "1 Tháng (Riêng Tư - BH Full)", sku: "CHATGPT_PLUS_FULL", priceCents: 300000, spec: { duration: "1 tháng", type: "Riêng tư", warranty: "Full tháng" } }
   ]
 };
 module.exports = { CATALOG, CURRENCY };

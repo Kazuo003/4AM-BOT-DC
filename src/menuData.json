@@ -113,8 +113,8 @@
     },
     "chatgpt": {
       "label": "ChatGPT Plus",
-      "emoji": "🧠",
-      "title": "🧠 BẢNG GIÁ CHATGPT PLUS",
+      "emoji": "<:4am_chatgpt:1560221485413433435>",
+      "title": "<:4am_chatgpt:1560221485413433435> BẢNG GIÁ CHATGPT PLUS",
       "titleEn": "CHATGPT PLUS",
       "subtitle": "• Tài khoản riêng tư, dùng độc quyền 100%\n• Trải nghiệm đầy đủ các model mới nhất của GPT\n• Bảo hành uy tín theo từng gói (BH 24h / BH Full tháng)\n• Bàn giao tài khoản nhanh chóng qua Ticket",
       "subtitleEn": "• 100% Private Account\n• Full access to latest GPT models\n• Warranty based on package (24H / Full Month)\n• Fast delivery via Ticket",
@@ -126,8 +126,8 @@
       "pingStaff": true,
       "enabled": true,
       "items": [
-        "ChatGPT Plus 1 Tháng (Riêng Tư - BH 24H) | 170.000đ",
-        "ChatGPT Plus 1 Tháng (Riêng Tư - BH Full) | 300.000đ"
+        "1 Tháng (Riêng Tư - BH 24H) | 170.000đ",
+        "1 Tháng (Riêng Tư - BH Full) | 300.000đ"
       ]
     }
   },
