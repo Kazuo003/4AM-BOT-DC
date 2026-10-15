@@ -1692,13 +1692,14 @@ client.on('interactionCreate', async (i) => {
 
     const { seller, handlers } = getSellerForCategory(selectedKey);
     const allHandlerIds = (handlers && handlers.length > 0) ? handlers : (seller?.discordId ? [seller.discordId] : []);
+    const staffRoleId = process.env.STAFF_ROLE_ID || '1472036681048658041';
     
     let handlerLine = '';
     if (allHandlerIds.length > 0) {
       const handlerTags = allHandlerIds.map(h => `<@${h}>`).join(', ');
       handlerLine = `👤 **Người phụ trách:** ${handlerTags}`;
     } else {
-      handlerLine = `👤 **Người phụ trách:** Staff 24/7`;
+      handlerLine = `👤 **Người phụ trách:** <@&${staffRoleId}>`;
     }
 
     const descParts = [
