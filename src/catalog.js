@@ -32,6 +32,11 @@ const CATALOG = {
     { name: "Gemini 5TB (18T - BH Full)", sku: "GEMINI_5TB_FULL_WARRANTY", priceCents: 150000, spec: { duration: "18 tháng", storage: "5TB", warranty: "Full 18 tháng", type: "Tài khoản" } },
     { name: "Add Fam 5TB (18T - Ko BH)", sku: "GEMINI_FAM_NO_WARRANTY", priceCents: 15000, spec: { duration: "18 tháng", storage: "5TB", warranty: "Không BH", type: "Add Family" } },
     { name: "Add Fam 5TB (18T - BH Full)", sku: "GEMINI_FAM_FULL_WARRANTY", priceCents: 75000, spec: { duration: "18 tháng", storage: "5TB", warranty: "Full 18 tháng", type: "Add Family" } }
+  ],
+  SPOTIFY: [
+    { name: "1 Tháng", sku: "SPOTIFY_1M", priceCents: 30000, spec: { duration: "1 tháng", warranty: "Full thời gian", type: "Chính chủ" } },
+    { name: "6 Tháng", sku: "SPOTIFY_6M", priceCents: 165000, spec: { duration: "6 tháng", warranty: "Full thời gian", type: "Chính chủ" } },
+    { name: "12 Tháng", sku: "SPOTIFY_12M", priceCents: 300000, spec: { duration: "12 tháng", warranty: "Full thời gian", type: "Chính chủ" } }
   ]
 };
 module.exports = { CATALOG, CURRENCY };
