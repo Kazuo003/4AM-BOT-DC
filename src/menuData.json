@@ -84,6 +84,32 @@
         "301M-500M | 7.700đ",
         "501M-1B | 7.500đ"
       ]
+    },
+    "vps_trial": {
+      "label": "VPS Trial Ngoại",
+      "emoji": "🖥️",
+      "title": "🖥️ BẢNG GIÁ VPS TRIAL NGOẠI (GIÁ RẺ)",
+      "titleEn": "TRIAL VPS (CHEAP)",
+      "subtitle": "⚡ Bảo hành 30 ngày • Treo Tool, Treo Game, Nuôi Acc, Chạy Bot 24/24 • Đa dạng vị trí & HĐH (Windows / Linux)",
+      "subtitleEn": "30-Day Warranty • Run Tools, Games, Bots 24/7 • Multi-Location & OS (Windows/Linux)",
+      "bannerUrl": "https://media.discordapp.net/attachments/1549013116145111050/1549026763089252443/3aa46f5701fc6ed92234ea0a9f86e2cd.gif?ex=6ad01757&is=6acec5d7&hm=c26b4f8582f2eb174e4ed2651fdce47951805970880019f6e2f8f39c2ac6cd24&=&width=640&height=356",
+      "color": "#38BDF8",
+      "seller": "shop_common",
+      "handlers": [],
+      "accountIndex": "0",
+      "pingStaff": true,
+      "enabled": true,
+      "items": [
+        "TRIAL 2-1 (2 Core / 1GB RAM / 30GB SSD) | 55.000đ",
+        "TRIAL 1-2 (1 Core / 2GB RAM / 50GB SSD) | 70.000đ",
+        "TRIAL 2-4 (2 Core / 4GB RAM / 30-80GB SSD) | 100.000đ",
+        "TRIAL 2-8 (2 Core / 8GB RAM / 30-60GB SSD) | 140.000đ",
+        "TRIAL 4-8 (4 Core / 8GB RAM / 160GB SSD) | 160.000đ",
+        "TRIAL 4-16 (4 Core / 16GB RAM / 120GB SSD) | 220.000đ",
+        "TRIAL 6-16 (6 Core / 16GB RAM / 320GB SSD) | 260.000đ",
+        "TRIAL 8-16 (8 Core / 16GB RAM / 200-350GB SSD) | 300.000đ",
+        "TRIAL 8-32 (8 Core / 32GB RAM / 250-640GB SSD) | 380.000đ"
+      ]
     }
   },
   "channels": {
