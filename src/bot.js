@@ -46,6 +46,21 @@ const {
   deleteAutoResponse
 } = require('./autoResponse');
 
+const {
+  loadGiveaways,
+  saveGiveaways,
+  parseDuration,
+  buildActiveGiveawayEmbed,
+  buildGiveawayActionRow,
+  buildEndedGiveawayEmbed,
+  registerGiveaway,
+  getGiveaway,
+  toggleJoinGiveaway,
+  endGiveaway,
+  rerollGiveaway,
+  initGiveawayScheduler
+} = require('./giveawayManager');
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -1563,6 +1578,7 @@ client.once('ready', async () => {
   await syncMenuChannel();
   await syncTicketChannel();
   startExpiryReminderScheduler();
+  initGiveawayScheduler(client);
   console.log('4AM Discord Bot is ready! 🚀');
 });
 
@@ -4589,6 +4605,202 @@ if (i.isChatInputCommand() && i.commandName === 'autoresponse') {
       });
     }
   }
+}
+
+// ==========================================
+// GIVEAWAY SYSTEM (Tổ chức sự kiện Giveaway)
+// ==========================================
+if (i.isChatInputCommand() && i.commandName === 'giveaway') {
+  const staffRoleId = process.env.STAFF_ROLE_ID;
+  const member = await i.guild.members.fetch(i.user.id);
+  const isStaff = member.permissions.has(PermissionsBitField.Flags.ManageGuild) ||
+                  (staffRoleId && member.roles.cache.has(staffRoleId));
+
+  if (!isStaff) {
+    return i.reply({
+      content: '❌ Bạn không có quyền quản lý Giveaway.',
+      ephemeral: true
+    });
+  }
+
+  const sub = i.options.getSubcommand();
+
+  if (sub === 'start') {
+    const prize = i.options.getString('prize', true);
+    const durationInput = i.options.getString('duration', true);
+    const winnersCount = i.options.getInteger('winners') || 1;
+    const targetChannel = i.options.getChannel('channel') || i.channel;
+    const description = i.options.getString('description') || '';
+
+    const durationMs = parseDuration(durationInput);
+    if (!durationMs) {
+      return i.reply({
+        content: '⚠️ Định dạng thời gian không hợp lệ! Vui lòng nhập dạng: `10m`, `30m`, `1h`, `24h`, `3d`, v.v.',
+        ephemeral: true
+      });
+    }
+
+    await i.deferReply({ ephemeral: true });
+
+    const dummyGiveaway = {
+      messageId: 'pending',
+      channelId: targetChannel.id,
+      guildId: i.guildId,
+      hostId: i.user.id,
+      prize,
+      description,
+      durationMs,
+      endsAt: Date.now() + durationMs,
+      winnersCount,
+      participants: []
+    };
+
+    const embed = buildActiveGiveawayEmbed(dummyGiveaway);
+    const row = buildGiveawayActionRow(dummyGiveaway, false);
+
+    const giveawayMsg = await targetChannel.send({
+      content: '🎉 **SỰ KIỆN GIVEAWAY MỚI ĐÃ BẮT ĐẦU!** 🎉',
+      embeds: [embed],
+      components: [row]
+    }).catch(err => {
+      console.error('Lỗi gửi giveaway message:', err);
+      return null;
+    });
+
+    if (!giveawayMsg) {
+      return i.editReply({
+        content: `❌ Bot không thể gửi tin nhắn vào kênh <#${targetChannel.id}>. Vui lòng kiểm tra quyền gửi tin nhắn của Bot!`
+      });
+    }
+
+    registerGiveaway({
+      messageId: giveawayMsg.id,
+      channelId: targetChannel.id,
+      guildId: i.guildId,
+      hostId: i.user.id,
+      prize,
+      description,
+      durationMs,
+      winnersCount
+    });
+
+    // Cập nhật lại customId chứa messageId thực tế
+    dummyGiveaway.messageId = giveawayMsg.id;
+    const updatedRow = buildGiveawayActionRow(dummyGiveaway, false);
+    await giveawayMsg.edit({ components: [updatedRow] }).catch(() => {});
+
+    return i.editReply({
+      content: `✅ Đã bắt đầu Giveaway **${prize}** thành công tại kênh <#${targetChannel.id}>!\n⏰ Kết thúc: <t:${Math.floor(dummyGiveaway.endsAt / 1000)}:R>`
+    });
+  }
+
+  if (sub === 'end') {
+    const messageId = i.options.getString('message_id', true).trim();
+    const g = getGiveaway(messageId);
+
+    if (!g) {
+      return i.reply({
+        content: `⚠️ Không tìm thấy Giveaway nào với Message ID: \`${messageId}\``,
+        ephemeral: true
+      });
+    }
+
+    if (g.ended) {
+      return i.reply({
+        content: `⚠️ Giveaway này đã kết thúc trước đó rồi!`,
+        ephemeral: true
+      });
+    }
+
+    await i.deferReply({ ephemeral: true });
+    const ended = await endGiveaway(client, messageId, true);
+
+    if (!ended) {
+      return i.editReply({ content: '❌ Không thể kết thúc Giveaway này.' });
+    }
+
+    return i.editReply({
+      content: `✅ Đã kết thúc sớm Giveaway **${g.prize}** và bốc thăm thành công!`
+    });
+  }
+
+  if (sub === 'reroll') {
+    const messageId = i.options.getString('message_id', true).trim();
+    const rerollCount = i.options.getInteger('winners') || 1;
+
+    await i.deferReply({ ephemeral: true });
+    const res = await rerollGiveaway(client, messageId, rerollCount);
+
+    if (!res.ok) {
+      return i.editReply({ content: `⚠️ ${res.error}` });
+    }
+
+    return i.editReply({
+      content: `✅ Đã reroll Giveaway thành công! Người trúng giải mới: ${res.newWinners.map(id => `<@${id}>`).join(', ')}`
+    });
+  }
+
+  if (sub === 'list') {
+    const list = loadGiveaways().filter(g => !g.ended && g.endsAt > Date.now());
+
+    if (list.length === 0) {
+      return i.reply({
+        content: '📭 Hiện tại không có sự kiện Giveaway nào đang diễn ra.',
+        ephemeral: true
+      });
+    }
+
+    const desc = list.map((g, idx) => {
+      const ends = Math.floor(g.endsAt / 1000);
+      return `${idx + 1}. **${g.prize}** — <#${g.channelId}>\n   • Hết hạn: <t:${ends}:R> | Người tham gia: **${(g.participants || []).length}**\n   • Message ID: \`${g.messageId}\``;
+    });
+
+    const embed = new EmbedBuilder()
+      .setTitle('🎉 DANH SÁCH GIVEAWAY ĐANG DIỄN RA')
+      .setDescription(desc.join('\n\n'))
+      .setColor(0x5865F2)
+      .setTimestamp();
+
+    return i.reply({ embeds: [embed], ephemeral: true });
+  }
+}
+
+// Giveaway Button Click: Tham gia / Rời khỏi
+if (i.isButton() && i.customId.startsWith('giveaway_join|')) {
+  const messageId = i.customId.split('|')[1];
+  const res = toggleJoinGiveaway(messageId, i.user.id);
+
+  if (!res.ok) {
+    return i.reply({
+      content: `⚠️ ${res.error}`,
+      ephemeral: true
+    });
+  }
+
+  try {
+    const updatedRow = buildGiveawayActionRow(res.giveaway, false);
+    const updatedEmbed = buildActiveGiveawayEmbed(res.giveaway);
+    await i.update({ embeds: [updatedEmbed], components: [updatedRow] }).catch(() => {});
+  } catch (_) {}
+
+  if (res.joined) {
+    return i.followUp({
+      content: `🎉 Bạn đã tham gia giveaway **${res.giveaway.prize}** thành công! Chúc bạn may mắn!`,
+      ephemeral: true
+    });
+  } else {
+    return i.followUp({
+      content: `❌ Bạn đã rời khỏi danh sách tham gia giveaway **${res.giveaway.prize}**.`,
+      ephemeral: true
+    });
+  }
+}
+
+if (i.isButton() && i.customId.startsWith('giveaway_ended|')) {
+  return i.reply({
+    content: '⚠️ Sự kiện Giveaway này đã kết thúc!',
+    ephemeral: true
+  });
 }
     //
     // Plan selection inside ticket → create order + ask extras

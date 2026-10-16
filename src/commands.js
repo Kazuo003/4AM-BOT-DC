@@ -133,6 +133,64 @@ const commands = [
       sub.setName('delete')
         .setDescription('Xóa phản hồi tự động theo từ khóa')
         .addStringOption(opt => opt.setName('trigger').setDescription('Từ khóa cần xóa').setRequired(true))
+    ),
+
+  // Giveaway system
+  new SlashCommandBuilder()
+    .setName('giveaway')
+    .setDescription('Quản lý và tổ chức sự kiện Giveaway (Staff/Admin)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addSubcommand(sub =>
+      sub.setName('start')
+        .setDescription('Bắt đầu một sự kiện Giveaway mới')
+        .addStringOption(opt =>
+          opt.setName('prize')
+            .setDescription('Phần thưởng giveaway (VD: 1 Tháng Spotify, 50M OwO Cash...)')
+            .setRequired(true))
+        .addStringOption(opt =>
+          opt.setName('duration')
+            .setDescription('Thời gian giveaway (VD: 10m, 1h, 24h, 3d...)')
+            .setRequired(true))
+        .addIntegerOption(opt =>
+          opt.setName('winners')
+            .setDescription('Số lượng người thắng giải (Mặc định: 1)')
+            .setRequired(false)
+            .setMinValue(1)
+            .setMaxValue(20))
+        .addChannelOption(opt =>
+          opt.setName('channel')
+            .setDescription('Kênh tổ chức giveaway (Mặc định: kênh hiện tại)')
+            .setRequired(false))
+        .addStringOption(opt =>
+          opt.setName('description')
+            .setDescription('Ghi chú hoặc điều kiện tham gia (tùy chọn)')
+            .setRequired(false))
+    )
+    .addSubcommand(sub =>
+      sub.setName('end')
+        .setDescription('Kết thúc sớm giveaway và bốc thăm người chiến thắng')
+        .addStringOption(opt =>
+          opt.setName('message_id')
+            .setDescription('ID tin nhắn của Giveaway cần kết thúc')
+            .setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('reroll')
+        .setDescription('Bốc lại người thắng mới cho Giveaway đã kết thúc')
+        .addStringOption(opt =>
+          opt.setName('message_id')
+            .setDescription('ID tin nhắn của Giveaway cần reroll')
+            .setRequired(true))
+        .addIntegerOption(opt =>
+          opt.setName('winners')
+            .setDescription('Số lượng người cần reroll (Mặc định: 1)')
+            .setRequired(false)
+            .setMinValue(1)
+            .setMaxValue(10))
+    )
+    .addSubcommand(sub =>
+      sub.setName('list')
+        .setDescription('Xem danh sách các Giveaway đang diễn ra')
     )
 ];
 
