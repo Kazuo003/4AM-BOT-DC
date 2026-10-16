@@ -1550,7 +1550,7 @@ client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
   try {
     client.user.setPresence({
-      activities: [{ name: '4AM STORE • Hệ thống tự động', type: ActivityType.Custom }],
+      activities: [{ name: '4AM STORE', type: ActivityType.Custom }],
       status: 'online'
     });
   } catch (_) {}
