@@ -12,7 +12,8 @@
     "register": "node src/commands.js",
     "seed:ui-test": "node scripts/seed-ui-test-data.js --confirm-reset",
     "test": "node scripts/test-payment-safety.js",
-    "build:css": "tailwindcss -i ./public/css/input.css -o ./public/css/dashboard.css --minify"
+    "build:css": "tailwindcss -i ./public/css/input.css -o ./public/css/dashboard.css --minify",
+    "updater": "node scripts/auto-updater.js"
   },
   "dependencies": {
     "@gpmpay/sdk": "^0.4.0",
