@@ -1,1 +1,13 @@
-[]
+[
+  {
+    "id": "ob9sQ2Sl",
+    "trigger": "tosowo",
+    "response": "⚠️ **ĐIỀU KHOẢN GIAO DỊCH OWO (TOS OWO) — 4AM SHOP**\n• Giao dịch cow đi kèm rủi ro từ Discord/Bot OwO (Ban, Warn, Reset tiền, Blacklist...).\n• Khách hàng tự chịu rủi ro. Shop không hoàn tiền hay đền bù nếu bị ban.",
+    "imageUrl": "",
+    "matchType": "contains",
+    "replyMode": "reply",
+    "enabled": true,
+    "updatedAt": "2026-10-16T03:20:14.727Z",
+    "createdAt": "2026-10-16T03:20:14.737Z"
+  }
+]
