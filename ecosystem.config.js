@@ -3,6 +3,7 @@ module.exports = {
     {
       name: '4am-bot',
       script: 'src/bot.js',
+      exec_mode: 'fork',
       instances: 1,
       autorestart: true,
       watch: false,
@@ -14,6 +15,7 @@ module.exports = {
     {
       name: '4am-updater',
       script: 'scripts/auto-updater.js',
+      exec_mode: 'fork',
       instances: 1,
       autorestart: true,
       watch: false,
