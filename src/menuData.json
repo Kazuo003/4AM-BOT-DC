@@ -263,6 +263,26 @@
       "items": [
         "1 Năm (BH Full) | 180.000đ"
       ]
+    },
+    "boost_server": {
+      "label": "Boost Server",
+      "emoji": "🚀",
+      "title": "🚀 BẢNG GIÁ BOOST SERVER DISCORD",
+      "titleEn": "BOOST SERVER DISCORD",
+      "subtitle": "• Mở khóa đặc quyền Server: Tùy chọn nâng cấp Level 1 (2 Boosts) hoặc Full Level 3 (14 Boosts)\n• Mở rộng Slot Emoji/Sticker, nâng chất lượng âm thanh & stream 1080p 60fps, mở khóa Vanity URL, Banner động...\n• Bảo hành Full 100% (BHF) trọn thời gian của gói\n• Quy trình đơn giản: Khách chỉ cần gửi link mời vào Server là Staff hỗ trợ boost ngay!\n• Giá có thể thay đổi tùy thời điểm",
+      "subtitleEn": "• Unlock Server Perks: Level 1 (2 Boosts) or Level 3 (14 Boosts)\n• Extra Emoji/Sticker slots, 1080p 60fps stream, Vanity URL, Animated Banner...\n• 100% Full warranty (BHF) throughout subscription duration\n• Easy setup: Simply send your server invite link\n• Prices may vary over time",
+      "bannerUrl": "https://media.discordapp.net/attachments/1549013116145111050/1549026763089252443/3aa46f5701fc6ed92234ea0a9f86e2cd.gif?ex=6ad01757&is=6acec5d7&hm=c26b4f8582f2eb174e4ed2651fdce47951805970880019f6e2f8f39c2ac6cd24&=&width=640&height=356",
+      "color": "#FF73FA",
+      "seller": "shop_common",
+      "handlers": [],
+      "accountIndex": "0",
+      "pingStaff": true,
+      "enabled": true,
+      "items": [
+        "2x Boost [ Level 1 ] (1 Tháng) | 40.000đ",
+        "14x Boost [ Level 3 ] (1 Tháng) | 160.000đ",
+        "14x Boost [ Level 3 ] (3 Tháng) | 300.000đ"
+      ]
     }
   },
   "channels": {
