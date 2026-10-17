@@ -225,6 +225,26 @@
       "items": [
         "1 Lượt Claim | 20.000đ"
       ]
+    },
+    "capcut": {
+      "label": "CapCut Pro",
+      "emoji": "<:4am_capcut:1478919116810223616>",
+      "title": "<:4am_capcut:1478919116810223616> BẢNG GIÁ CAPCUT PRO",
+      "titleEn": "CAPCUT PRO",
+      "subtitle": "• Hình thức: Shop cấp sẵn tài khoản CapCut Pro (bàn giao tài khoản qua Ticket)\n• Mở khóa full tính năng CapCut Pro trên PC, Web & Mobile\n• Xuất video 4K sắc nét, không watermark, kho hiệu ứng & âm thanh Pro bản quyền\n• Bảo hành uy tín trọn thời gian sử dụng gói",
+      "subtitleEn": "• Type: Pre-made CapCut Pro account provided via Ticket\n• Full access to CapCut Pro features on PC, Web & Mobile\n• 4K export, no watermark, exclusive Pro effects & audio\n• Full warranty throughout subscription duration",
+      "bannerUrl": "https://media.discordapp.net/attachments/1549013116145111050/1549026763089252443/3aa46f5701fc6ed92234ea0a9f86e2cd.gif?ex=6ad01757&is=6acec5d7&hm=c26b4f8582f2eb174e4ed2651fdce47951805970880019f6e2f8f39c2ac6cd24&=&width=640&height=356",
+      "color": "#00F2FE",
+      "seller": "shop_common",
+      "handlers": [],
+      "accountIndex": "0",
+      "pingStaff": true,
+      "enabled": true,
+      "items": [
+        "7 Ngày | 20.000đ",
+        "30 Ngày | 40.000đ",
+        "1 Năm | 580.000đ"
+      ]
     }
   },
   "channels": {
