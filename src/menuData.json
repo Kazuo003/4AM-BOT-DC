@@ -283,6 +283,24 @@
         "14x Boost [ Level 3 ] (1 Tháng) | 160.000đ",
         "14x Boost [ Level 3 ] (3 Tháng) | 300.000đ"
       ]
+    },
+    "office365": {
+      "label": "Office 365 Plus",
+      "emoji": "<:4am_office365:1561059197280456785>",
+      "title": "<:4am_office365:1561059197280456785> BẢNG GIÁ MICROSOFT OFFICE 365 PLUS",
+      "titleEn": "MICROSOFT OFFICE 365 PLUS",
+      "subtitle": "• Hình thức: Shop cấp sẵn tài khoản Office 365 Plus riêng tư 100% (bàn giao qua Ticket)\n• Trọn bộ ứng dụng văn phòng bản quyền: Word, Excel, PowerPoint, Outlook, OneNote...\n• Hỗ trợ đăng nhập & đồng bộ trên nhiều thiết bị (PC, Mac, Laptop, iPad, Điện thoại)\n• Kèm dung lượng lưu trữ đám mây OneDrive tốc độ cao\n• Bảo hành uy tín trọn thời gian sử dụng gói",
+      "subtitleEn": "• Type: Pre-made 100% Private Office 365 Plus account provided via Ticket\n• Full licensed Office apps: Word, Excel, PowerPoint, Outlook, OneNote...\n• Multi-device support & sync (PC, Mac, iPad, iPhone, Android)\n• High-speed OneDrive cloud storage included\n• Full warranty throughout subscription duration",
+      "bannerUrl": "https://media.discordapp.net/attachments/1549013116145111050/1549026763089252443/3aa46f5701fc6ed92234ea0a9f86e2cd.gif?ex=6ad01757&is=6acec5d7&hm=c26b4f8582f2eb174e4ed2651fdce47951805970880019f6e2f8f39c2ac6cd24&=&width=640&height=356",
+      "color": "#D83B01",
+      "seller": "shop_common",
+      "handlers": [],
+      "accountIndex": "0",
+      "pingStaff": true,
+      "enabled": true,
+      "items": [
+        "1 Năm (Tài Khoản Riêng Tư) | 65.000đ"
+      ]
     }
   },
   "channels": {
