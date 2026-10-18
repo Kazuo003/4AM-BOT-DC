@@ -191,7 +191,25 @@ const commands = [
     .addSubcommand(sub =>
       sub.setName('list')
         .setDescription('Xem danh sách các Giveaway đang diễn ra')
-    )
+    ),
+
+  // Ticket management: Add user to ticket
+  new SlashCommandBuilder()
+    .setName('add')
+    .setDescription('Thêm một thành viên vào ticket này (Staff/Ticket Owner)')
+    .addUserOption(opt =>
+      opt.setName('user')
+        .setDescription('Thành viên cần thêm vào ticket')
+        .setRequired(true)),
+
+  // Ticket management: Remove user from ticket
+  new SlashCommandBuilder()
+    .setName('remove')
+    .setDescription('Xóa một thành viên khỏi ticket này (Staff/Ticket Owner)')
+    .addUserOption(opt =>
+      opt.setName('user')
+        .setDescription('Thành viên cần xóa khỏi ticket')
+        .setRequired(true))
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);

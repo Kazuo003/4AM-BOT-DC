@@ -1561,6 +1561,190 @@ function resolveTicketCategoryId(guild, data) {
   return null;
 }
 
+// ==========================================
+// TICKET MEMBER HELPERS (/add & /remove)
+// ==========================================
+async function isTicketChannel(channel) {
+  if (!channel || !channel.guild || !channel.isTextBased()) return false;
+  const name = (channel.name || '').toLowerCase();
+  if (name.startsWith('ticket-') || name.startsWith('order-') || name.startsWith('closed-')) return true;
+  try {
+    const data = getMenuData();
+    const ticketCatId = resolveTicketCategoryId(channel.guild, data);
+    if (ticketCatId && channel.parentId === ticketCatId) return true;
+  } catch (_) {}
+  try {
+    const ticket = await prisma.ticket.findFirst({ where: { channelId: channel.id } }).catch(() => null);
+    if (ticket) return true;
+  } catch (_) {}
+  return false;
+}
+
+async function canManageTicketMembers(channel, user) {
+  if (!channel || !channel.guild || !user) return false;
+  // 1. Staff / Admin bypass
+  try {
+    const member = await channel.guild.members.fetch(user.id).catch(() => null);
+    if (member) {
+      if (member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+          member.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
+          member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+        return true;
+      }
+      const staffRoleId = process.env.STAFF_ROLE_ID;
+      if (staffRoleId && member.roles.cache.has(staffRoleId)) return true;
+    }
+  } catch (_) {}
+
+  // 2. Ticket order in DB check (Ticket creator or assigned seller/handler)
+  let dbTicket = null;
+  try {
+    dbTicket = await prisma.ticket.findFirst({
+      where: { channelId: channel.id },
+      include: { order: { include: { user: true } } }
+    }).catch(() => null);
+
+    if (dbTicket) {
+      if (dbTicket.order?.user?.discordId === user.id) return true;
+      if (dbTicket.order) {
+        const snap = typeof dbTicket.order.planSnapshotJson === 'string'
+          ? JSON.parse(dbTicket.order.planSnapshotJson || '{}')
+          : (dbTicket.order.planSnapshotJson || {});
+        if (Array.isArray(snap.handlers) && snap.handlers.includes(user.id)) return true;
+        if (snap.sellerId === user.id) return true;
+      }
+    }
+  } catch (_) {}
+
+  // 3. Fallback: Check if user has explicit allow ViewChannel overwrite on this channel
+  const ow = channel.permissionOverwrites?.cache?.get(user.id);
+  if (ow && ow.allow?.has(PermissionsBitField.Flags.ViewChannel)) {
+    return true;
+  }
+
+  return false;
+}
+
+async function handleAddTicketMember(channel, actor, targetUser) {
+  const isTicket = await isTicketChannel(channel);
+  if (!isTicket) {
+    return { ok: false, error: '❌ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket!' };
+  }
+
+  const canManage = await canManageTicketMembers(channel, actor);
+  if (!canManage) {
+    return { ok: false, error: '❌ Bạn không có quyền thêm thành viên vào ticket này. (Chỉ Staff hoặc chủ sở hữu Ticket)' };
+  }
+
+  if (!targetUser) {
+    return { ok: false, error: '⚠️ Vui lòng chỉ định một người dùng hợp lệ để thêm vào ticket.' };
+  }
+
+  if (targetUser.id === client.user.id) {
+    return { ok: false, error: '🤖 Bot đã có mặt trong ticket rồi!' };
+  }
+
+  const targetMember = await channel.guild.members.fetch(targetUser.id).catch(() => null);
+  if (!targetMember) {
+    return { ok: false, error: '❌ Thành viên này hiện không có mặt trong server Discord!' };
+  }
+
+  const existingOw = channel.permissionOverwrites.cache.get(targetUser.id);
+  if (existingOw && existingOw.allow?.has(PermissionsBitField.Flags.ViewChannel)) {
+    return { ok: false, error: `ℹ️ <@${targetUser.id}> đã có mặt trong ticket này rồi!` };
+  }
+
+  try {
+    await channel.permissionOverwrites.edit(targetUser.id, {
+      ViewChannel: true,
+      SendMessages: true,
+      ReadMessageHistory: true,
+      AttachFiles: true,
+      EmbedLinks: true
+    });
+
+    const embed = new EmbedBuilder()
+      .setDescription(`👋 <@${targetUser.id}> đã được thêm vào ticket bởi <@${actor.id}>!`)
+      .setColor(0x00C2A8)
+      .setTimestamp();
+
+    await channel.send({ content: `Chào mừng <@${targetUser.id}>!`, embeds: [embed] });
+
+    return { ok: true, message: `✅ Đã thêm <@${targetUser.id}> vào ticket thành công!` };
+  } catch (err) {
+    console.error('Lỗi khi thêm user vào ticket:', err);
+    return { ok: false, error: `❌ Không thể thêm thành viên: ${err.message}` };
+  }
+}
+
+async function handleRemoveTicketMember(channel, actor, targetUser) {
+  const isTicket = await isTicketChannel(channel);
+  if (!isTicket) {
+    return { ok: false, error: '❌ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket!' };
+  }
+
+  const canManage = await canManageTicketMembers(channel, actor);
+  if (!canManage) {
+    return { ok: false, error: '❌ Bạn không có quyền xóa thành viên khỏi ticket này. (Chỉ Staff hoặc chủ sở hữu Ticket)' };
+  }
+
+  if (!targetUser) {
+    return { ok: false, error: '⚠️ Vui lòng chỉ định một người dùng hợp lệ để xóa khỏi ticket.' };
+  }
+
+  if (targetUser.id === client.user.id) {
+    return { ok: false, error: '❌ Không thể xóa Bot khỏi ticket!' };
+  }
+
+  if (targetUser.id === actor.id) {
+    return { ok: false, error: '⚠️ Bạn không thể tự xóa chính mình khỏi ticket bằng lệnh này.' };
+  }
+
+  const targetIsStaff = await isStaffMember({ guild: channel.guild, user: targetUser });
+  const actorIsStaff = await isStaffMember({ guild: channel.guild, user: actor });
+  if (targetIsStaff && !actorIsStaff) {
+    return { ok: false, error: '❌ Bạn không có quyền xóa nhân viên hỗ trợ (Staff) khỏi ticket!' };
+  }
+
+  let dbTicket = null;
+  try {
+    dbTicket = await prisma.ticket.findFirst({
+      where: { channelId: channel.id },
+      include: { order: { include: { user: true } } }
+    }).catch(() => null);
+  } catch (_) {}
+
+  if (!actorIsStaff && dbTicket?.order?.user?.discordId === targetUser.id) {
+    return { ok: false, error: '❌ Bạn không thể xóa chủ sở hữu Ticket!' };
+  }
+
+  const existingOw = channel.permissionOverwrites.cache.get(targetUser.id);
+  if (!existingOw || !existingOw.allow?.has(PermissionsBitField.Flags.ViewChannel)) {
+    return { ok: false, error: `ℹ️ <@${targetUser.id}> không có trong ticket này!` };
+  }
+
+  try {
+    await channel.permissionOverwrites.delete(targetUser.id).catch(async () => {
+      await channel.permissionOverwrites.edit(targetUser.id, {
+        ViewChannel: false,
+        SendMessages: false
+      });
+    });
+
+    const embed = new EmbedBuilder()
+      .setDescription(`🚫 <@${targetUser.id}> đã được đưa ra khỏi ticket bởi <@${actor.id}>.`)
+      .setColor(0xED4245)
+      .setTimestamp();
+
+    await channel.send({ embeds: [embed] });
+
+    return { ok: true, message: `✅ Đã xóa <@${targetUser.id}> khỏi ticket thành công!` };
+  } catch (err) {
+    console.error('Lỗi khi xóa user khỏi ticket:', err);
+    return { ok: false, error: `❌ Không thể xóa thành viên: ${err.message}` };
+  }
+}
+
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
   try {
@@ -1593,6 +1777,63 @@ client.on('messageCreate', async (message) => {
 
     const content = message.content;
     if (!content) return;
+
+    const trimmed = content.trim();
+    const lower = trimmed.toLowerCase();
+
+    // Lệnh nhanh trong Ticket: /add @user hoặc !add @user
+    if (lower.startsWith('/add') || lower.startsWith('!add')) {
+      if (await isTicketChannel(message.channel)) {
+        let targets = Array.from(message.mentions.users.values()).filter(u => u.id !== client.user.id);
+        if (targets.length === 0) {
+          const parts = trimmed.split(/\s+/).slice(1);
+          for (const p of parts) {
+            const rawId = p.replace(/[^0-9]/g, '');
+            if (rawId) {
+              const u = await client.users.fetch(rawId).catch(() => null);
+              if (u) targets.push(u);
+            }
+          }
+        }
+        if (targets.length === 0) {
+          return message.reply({ content: '⚠️ Cú pháp: `/add @username` hoặc `/add <ID_người_dùng>`' }).catch(() => {});
+        }
+        for (const targetUser of targets) {
+          const res = await handleAddTicketMember(message.channel, message.author, targetUser);
+          if (!res.ok) {
+            await message.reply({ content: res.error }).catch(() => {});
+          }
+        }
+        return;
+      }
+    }
+
+    // Lệnh nhanh trong Ticket: /remove @user hoặc !remove @user
+    if (lower.startsWith('/remove') || lower.startsWith('!remove')) {
+      if (await isTicketChannel(message.channel)) {
+        let targets = Array.from(message.mentions.users.values()).filter(u => u.id !== client.user.id);
+        if (targets.length === 0) {
+          const parts = trimmed.split(/\s+/).slice(1);
+          for (const p of parts) {
+            const rawId = p.replace(/[^0-9]/g, '');
+            if (rawId) {
+              const u = await client.users.fetch(rawId).catch(() => null);
+              if (u) targets.push(u);
+            }
+          }
+        }
+        if (targets.length === 0) {
+          return message.reply({ content: '⚠️ Cú pháp: `/remove @username` hoặc `/remove <ID_người_dùng>`' }).catch(() => {});
+        }
+        for (const targetUser of targets) {
+          const res = await handleRemoveTicketMember(message.channel, message.author, targetUser);
+          if (!res.ok) {
+            await message.reply({ content: res.error }).catch(() => {});
+          }
+        }
+        return;
+      }
+    }
 
     // Tìm phản hồi tự động phù hợp
     const matched = findMatchingAutoResponse(content, message.channel.id);
@@ -4773,6 +5014,23 @@ if (i.isChatInputCommand() && i.commandName === 'giveaway') {
 
     return i.reply({ embeds: [embed], ephemeral: true });
   }
+}
+
+// ==========================================
+// TICKET MEMBER MANAGEMENT SLASH COMMANDS
+// ==========================================
+if (i.isChatInputCommand() && i.commandName === 'add') {
+  await i.deferReply({ ephemeral: true });
+  const targetUser = i.options.getUser('user', true);
+  const res = await handleAddTicketMember(i.channel, i.user, targetUser);
+  return i.editReply({ content: res.ok ? res.message : res.error });
+}
+
+if (i.isChatInputCommand() && i.commandName === 'remove') {
+  await i.deferReply({ ephemeral: true });
+  const targetUser = i.options.getUser('user', true);
+  const res = await handleRemoveTicketMember(i.channel, i.user, targetUser);
+  return i.editReply({ content: res.ok ? res.message : res.error });
 }
 
 // Giveaway Button Click: Tham gia / Rời khỏi
