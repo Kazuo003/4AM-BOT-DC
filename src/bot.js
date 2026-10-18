@@ -1604,11 +1604,21 @@ client.on('messageCreate', async (message) => {
     }
 
     const imgUrl = (matched.imageUrl || '').trim();
-    if (imgUrl && /^https?:\/\//i.test(imgUrl)) {
-      payload.files = [{
-        attachment: imgUrl,
-        name: 'autoresponse_media' + (path.extname(imgUrl.split('?')[0]) || '.png')
-      }];
+    if (imgUrl) {
+      if (/^https?:\/\//i.test(imgUrl)) {
+        payload.files = [{
+          attachment: imgUrl,
+          name: 'autoresponse_media' + (path.extname(imgUrl.split('?')[0]) || '.png')
+        }];
+      } else {
+        const localPath = path.isAbsolute(imgUrl) ? imgUrl : path.resolve(__dirname, '..', imgUrl);
+        if (fs.existsSync(localPath)) {
+          payload.files = [{
+            attachment: localPath,
+            name: path.basename(localPath)
+          }];
+        }
+      }
     }
 
     // Nếu không có nội dung lẫn ảnh thì bỏ qua

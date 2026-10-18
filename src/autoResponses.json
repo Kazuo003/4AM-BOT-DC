@@ -9,5 +9,16 @@
     "enabled": true,
     "updatedAt": "2026-10-16T03:20:14.727Z",
     "createdAt": "2026-10-16T03:20:14.737Z"
+  },
+  {
+    "id": "stk4am01",
+    "trigger": "stk4am",
+    "response": "",
+    "imageUrl": "public/stk4am.png",
+    "matchType": "contains",
+    "replyMode": "reply",
+    "enabled": true,
+    "updatedAt": "2026-10-18T08:32:54.961Z",
+    "createdAt": "2026-10-18T08:32:54.961Z"
   }
 ]
