@@ -5080,6 +5080,42 @@ if (i.isChatInputCommand() && i.commandName === 'remove') {
   return i.editReply({ content: res.ok ? res.message : res.error });
 }
 
+// ==========================================
+// STAFF TOOL: TRA CỨU BIẾN ĐỘNG SỐ DƯ (/check-bank)
+// ==========================================
+if (i.isChatInputCommand() && i.commandName === 'check-bank') {
+  if (!(await isStaffMember(i))) {
+    return i.reply({ content: '❌ Bạn không có quyền sử dụng lệnh này.', ephemeral: true });
+  }
+  await i.deferReply({ ephemeral: true });
+  const limit = Math.min(20, Math.max(1, i.options.getInteger('limit') || 5));
+  const txs = await prisma.paymentTransaction.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: limit
+  });
+  if (!txs.length) {
+    return i.editReply({ content: 'ℹ️ Chưa có biến động số dư nào được ghi nhận trong hệ thống.' });
+  }
+  const lines = txs.map((tx, idx) => {
+    let payload = {};
+    try { payload = JSON.parse(tx.rawPayloadJson || '{}'); } catch (_) {}
+    const content = payload.description || payload.content || tx.orderNo || 'Chuyển tiền tự do';
+    const amountStr = `+${Number(tx.amount || 0).toLocaleString('vi-VN')} VNĐ`;
+    const timeStr = `<t:${Math.floor(new Date(tx.createdAt).getTime() / 1000)}:R>`;
+    const tag = (tx.status === 'SUCCESS' || tx.status === 'PAID') ? '✅ Đã đối soát' : '⚠️ Tiền tự do';
+    return `${idx + 1}. **${amountStr}** [${tag}]\n   • **Nội dung:** \`${content}\`\n   • **Mã GD:** \`${tx.transactionId}\` (${timeStr})`;
+  });
+
+  const embed = new EmbedBuilder()
+    .setTitle('💰 BIẾN ĐỘNG SỐ DƯ GẦN ĐÂY')
+    .setDescription(lines.join('\n\n'))
+    .setColor(0x00C2A8)
+    .setFooter({ text: '4AM Shop • Tra cứu biến động ngân hàng' })
+    .setTimestamp();
+
+  return i.editReply({ embeds: [embed] });
+}
+
 // Giveaway Button Click: Tham gia / Rời khỏi
 if (i.isButton() && i.customId.startsWith('giveaway_join|')) {
   const messageId = i.customId.split('|')[1];
@@ -6821,11 +6857,42 @@ async function notifyProcessedPayment(updatedOrder, payment) {
   await upsertSubscriptionForPaidOrder(updatedOrder.id);
 }
 
+// Thông báo biến động số dư tự do / không gắn mã đơn (dành cho khách quen chuyển khoản)
+async function notifyUnmatchedPayment(payment) {
+  const logChannelId = process.env.PAYMENT_LOG_CHANNEL_ID;
+  const bankLabel = [process.env.BANK_NAME, process.env.BANK_OWNER].filter(Boolean).join(' — ') || 'Tài khoản shop';
+  if (client.isReady() && logChannelId) {
+    const logCh = await client.channels.fetch(logChannelId).catch(() => null);
+    if (logCh?.isTextBased()) {
+      const staffRoleMention = process.env.STAFF_ROLE_ID ? `<@&${process.env.STAFF_ROLE_ID}>` : '';
+      const embed = new EmbedBuilder()
+        .setTitle('💰 BIẾN ĐỘNG SỐ DƯ — TIỀN VÀO TÀI KHOẢN')
+        .setColor(0x00C2A8)
+        .setDescription([
+          `💵 **Số tiền nhận:** **+${payment.transferAmount.toLocaleString('vi-VN')} VNĐ**`,
+          `🏦 **Tài khoản nhận:** \`${payment.receivingAccount || process.env.BANK_ACCOUNT || '(không có)'}\` (${bankLabel})`,
+          `📝 **Nội dung chuyển khoản:** \`${payment.rawContent || '(không có)'}\``,
+          `🔢 **Mã giao dịch:** \`${payment.transactionId || 'N/A'}\``,
+          `🕒 **Thời gian:** <t:${Math.floor((payment.timestamp || Date.now()) / 1000)}:F>`,
+          '',
+          `ℹ️ **Ghi chú:** Khách chuyển tiền tự do hoặc không gắn mã đơn.`
+        ].join('\n'))
+        .setTimestamp();
+
+      await logCh.send({
+        content: `🔔 ${staffRoleMention} Có biến động số dư mới:`,
+        embeds: [embed]
+      }).catch(console.error);
+    }
+  }
+}
+
 // --- PayOS Webhook Endpoint (@payos/node) ---
 app.post('/api/payos/webhook', async (req, res) => {
   try {
     const result = await processPayosWebhook(req.body, {
       onOrderPaid: notifyProcessedPayment,
+      onUnmatchedPayment: notifyUnmatchedPayment,
       source: 'PAYOS_WEBHOOK'
     });
     if (!result.ok) {
@@ -6839,6 +6906,208 @@ app.post('/api/payos/webhook', async (req, res) => {
   }
 });
 app.post('/api/webhook/payos', (req, res) => res.redirect(307, '/api/payos/webhook'));
+
+// --- SePay Webhook Endpoint (sepay.vn) ---
+app.post(['/api/sepay/webhook', '/api/webhook/sepay'], async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data) return res.status(400).json({ ok: false, error: 'No data' });
+
+    // Chỉ nhận tiền vào (transferType === 'in')
+    if (data.transferType && data.transferType !== 'in') {
+      return res.json({ ok: true, ignored: true, message: 'Bỏ qua giao dịch tiền ra' });
+    }
+
+    const transactionId = String(data.id || data.referenceCode || `SEPAY-${Date.now()}`);
+    const transferAmount = Math.max(0, Math.round(Number(data.transferAmount || data.amount || 0)));
+    const rawContent = String(data.content || data.description || '').trim();
+    const receivingAccount = String(data.accountNumber || process.env.BANK_ACCOUNT || '').trim();
+    const timestamp = data.transactionDate ? new Date(data.transactionDate).getTime() : Date.now();
+
+    // Idempotency
+    const existing = await prisma.paymentTransaction.findUnique({ where: { transactionId } });
+    if (existing) {
+      return res.json({ ok: true, duplicate: true, message: 'Giao dịch đã được ghi nhận trước đó' });
+    }
+
+    const orderCodeMatch = rawContent.match(/4AM[\s_-]*([A-Za-z0-9]{6,12})/i) || rawContent.match(/\b([A-Za-z0-9]{8})\b/i);
+    const orderNo = orderCodeMatch ? orderCodeMatch[1].toUpperCase() : null;
+
+    let order = null;
+    if (orderNo) {
+      order = await prisma.order.findUnique({
+        where: { orderNo },
+        include: { user: true, product: true, ticket: true }
+      });
+    }
+
+    if (order && order.status === 'PENDING') {
+      await updateOrderStatus(order.id, 'PAID');
+      await prisma.paymentTransaction.create({
+        data: {
+          transactionId,
+          orderNo: order.orderNo,
+          orderId: order.id,
+          amount: transferAmount,
+          expectedAmount: order.amountCents,
+          receivingAccount,
+          status: 'SUCCESS',
+          source: 'SEPAY_WEBHOOK',
+          rawPayloadJson: JSON.stringify(data)
+        }
+      });
+      await notifyProcessedPayment(order, { transferAmount, receivingAccount, transactionId, rawContent });
+      return res.json({ ok: true, matched: true, orderNo: order.orderNo });
+    } else {
+      await prisma.paymentTransaction.create({
+        data: {
+          transactionId,
+          orderNo: orderNo || null,
+          amount: transferAmount,
+          receivingAccount,
+          status: 'UNMATCHED_OR_FREE',
+          source: 'SEPAY_WEBHOOK',
+          rawPayloadJson: JSON.stringify(data)
+        }
+      });
+      await notifyUnmatchedPayment({ transferAmount, receivingAccount, rawContent, transactionId, timestamp });
+      return res.json({ ok: true, matched: false, message: 'Đã báo biến động số dư tự do thành công' });
+    }
+  } catch (err) {
+    console.error('Lỗi khi xử lý SePay webhook:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// --- Casso Webhook Endpoint (casso.vn) ---
+app.post(['/api/casso/webhook', '/api/webhook/casso'], async (req, res) => {
+  try {
+    const list = Array.isArray(req.body?.data) ? req.body.data : (Array.isArray(req.body) ? req.body : [req.body]);
+    for (const item of list) {
+      if (!item || (item.amount && Number(item.amount) <= 0)) continue;
+      const transactionId = String(item.id || item.tid || `CASSO-${Date.now()}`);
+      const transferAmount = Math.max(0, Math.round(Number(item.amount || 0)));
+      const rawContent = String(item.description || '').trim();
+      const receivingAccount = String(item.corresponsiveAccount || item.accountNumber || process.env.BANK_ACCOUNT || '').trim();
+      const timestamp = item.when ? new Date(item.when).getTime() : Date.now();
+
+      const existing = await prisma.paymentTransaction.findUnique({ where: { transactionId } });
+      if (existing) continue;
+
+      const orderCodeMatch = rawContent.match(/4AM[\s_-]*([A-Za-z0-9]{6,12})/i) || rawContent.match(/\b([A-Za-z0-9]{8})\b/i);
+      const orderNo = orderCodeMatch ? orderCodeMatch[1].toUpperCase() : null;
+
+      let order = null;
+      if (orderNo) {
+        order = await prisma.order.findUnique({
+          where: { orderNo },
+          include: { user: true, product: true, ticket: true }
+        });
+      }
+
+      if (order && order.status === 'PENDING') {
+        await updateOrderStatus(order.id, 'PAID');
+        await prisma.paymentTransaction.create({
+          data: {
+            transactionId,
+            orderNo: order.orderNo,
+            orderId: order.id,
+            amount: transferAmount,
+            expectedAmount: order.amountCents,
+            receivingAccount,
+            status: 'SUCCESS',
+            source: 'CASSO_WEBHOOK',
+            rawPayloadJson: JSON.stringify(item)
+          }
+        });
+        await notifyProcessedPayment(order, { transferAmount, receivingAccount, transactionId, rawContent });
+      } else {
+        await prisma.paymentTransaction.create({
+          data: {
+            transactionId,
+            orderNo: orderNo || null,
+            amount: transferAmount,
+            receivingAccount,
+            status: 'UNMATCHED_OR_FREE',
+            source: 'CASSO_WEBHOOK',
+            rawPayloadJson: JSON.stringify(item)
+          }
+        });
+        await notifyUnmatchedPayment({ transferAmount, receivingAccount, rawContent, transactionId, timestamp });
+      }
+    }
+    return res.json({ ok: true, message: 'Processed Casso webhook' });
+  } catch (err) {
+    console.error('Lỗi khi xử lý Casso webhook:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// --- Generic Bank Webhook Endpoint (/api/bank/webhook) ---
+app.post(['/api/bank/webhook', '/api/webhook/bank'], async (req, res) => {
+  try {
+    const data = req.body || {};
+    const transferAmount = Math.max(0, Math.round(Number(data.amount || data.transferAmount || 0)));
+    if (!transferAmount) return res.status(400).json({ ok: false, error: 'Thiếu số tiền amount' });
+
+    const transactionId = String(data.transactionId || data.id || data.reference || `BANK-${Date.now()}`);
+    const rawContent = String(data.content || data.description || '').trim();
+    const receivingAccount = String(data.accountNumber || data.bankAccount || process.env.BANK_ACCOUNT || '').trim();
+    const timestamp = data.time || data.timestamp ? new Date(data.time || data.timestamp).getTime() : Date.now();
+
+    const existing = await prisma.paymentTransaction.findUnique({ where: { transactionId } });
+    if (existing) {
+      return res.json({ ok: true, duplicate: true, message: 'Giao dịch đã được ghi nhận trước đó' });
+    }
+
+    const orderCodeMatch = rawContent.match(/4AM[\s_-]*([A-Za-z0-9]{6,12})/i) || rawContent.match(/\b([A-Za-z0-9]{8})\b/i);
+    const orderNo = orderCodeMatch ? orderCodeMatch[1].toUpperCase() : null;
+
+    let order = null;
+    if (orderNo) {
+      order = await prisma.order.findUnique({
+        where: { orderNo },
+        include: { user: true, product: true, ticket: true }
+      });
+    }
+
+    if (order && order.status === 'PENDING') {
+      await updateOrderStatus(order.id, 'PAID');
+      await prisma.paymentTransaction.create({
+        data: {
+          transactionId,
+          orderNo: order.orderNo,
+          orderId: order.id,
+          amount: transferAmount,
+          expectedAmount: order.amountCents,
+          receivingAccount,
+          status: 'SUCCESS',
+          source: 'GENERIC_BANK_WEBHOOK',
+          rawPayloadJson: JSON.stringify(data)
+        }
+      });
+      await notifyProcessedPayment(order, { transferAmount, receivingAccount, transactionId, rawContent });
+      return res.json({ ok: true, matched: true, orderNo: order.orderNo });
+    } else {
+      await prisma.paymentTransaction.create({
+        data: {
+          transactionId,
+          orderNo: orderNo || null,
+          amount: transferAmount,
+          receivingAccount,
+          status: 'UNMATCHED_OR_FREE',
+          source: 'GENERIC_BANK_WEBHOOK',
+          rawPayloadJson: JSON.stringify(data)
+        }
+      });
+      await notifyUnmatchedPayment({ transferAmount, receivingAccount, rawContent, transactionId, timestamp });
+      return res.json({ ok: true, matched: false, message: 'Đã báo biến động số dư tự do thành công' });
+    }
+  } catch (err) {
+    console.error('Lỗi khi xử lý Generic Bank webhook:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
 // --- PayOS Background Auto-Check for Pending Orders (Zero-Cloudflare, Works Everywhere) ---
 let isPayosSyncing = false;

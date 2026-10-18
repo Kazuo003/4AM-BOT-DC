@@ -209,7 +209,16 @@ const commands = [
     .addUserOption(opt =>
       opt.setName('user')
         .setDescription('Thành viên cần xóa khỏi ticket')
-        .setRequired(true))
+        .setRequired(true)),
+
+  // Staff tool: Tra cứu biến động số dư gần nhất
+  new SlashCommandBuilder()
+    .setName('check-bank')
+    .setDescription('Tra cứu danh sách biến động số dư / tiền vào gần nhất (Staff)')
+    .addIntegerOption(opt =>
+      opt.setName('limit')
+        .setDescription('Số lượng giao dịch cần xem (1 - 20, mặc định: 5)')
+        .setRequired(false))
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);

@@ -230,12 +230,28 @@ async function processPayosWebhook(reqBody, options = {}) {
         orderNo: String(orderCodeNum),
         amount: transferAmount,
         receivingAccount,
-        status: 'ORDER_NOT_FOUND',
+        status: 'UNMATCHED_OR_FREE',
         source,
         rawPayloadJson: JSON.stringify(webhookData)
       }
     });
-    return { ok: false, code: 'ORDER_NOT_FOUND', message: `Không tìm thấy đơn hàng tương ứng với orderCode=${orderCodeNum}` };
+
+    if (typeof options.onUnmatchedPayment === 'function') {
+      try {
+        await options.onUnmatchedPayment({
+          transferAmount,
+          receivingAccount,
+          transactionId,
+          rawContent: webhookData.description || `PayOS #${orderCodeNum}`,
+          orderCode: orderCodeNum,
+          timestamp: webhookData.transactionDateTime ? new Date(webhookData.transactionDateTime).getTime() : Date.now()
+        });
+      } catch (err) {
+        console.error('⚠️ [PayOS] Lỗi khi gọi onUnmatchedPayment:', err);
+      }
+    }
+
+    return { ok: true, code: 'UNMATCHED_PAYMENT_NOTIFIED', message: `Đã ghi nhận và thông báo biến động số dư tự do (+${transferAmount.toLocaleString('vi-VN')} VNĐ)` };
   }
 
   // Nếu đơn hàng đã hoàn tất trước đó

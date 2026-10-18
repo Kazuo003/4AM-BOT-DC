@@ -170,9 +170,22 @@ async function processGpmWebhook(payload, options = {}) {
   if (!orderCode) {
     await prisma.paymentTransaction.create({ data: {
       transactionId, orderNo: null, amount: transferAmount, receivingAccount: receivingAccount || null,
-      status: 'UNKNOWN_ORDER_CODE', source, rawPayloadJson: JSON.stringify(payload)
+      status: 'UNMATCHED_OR_FREE', source, rawPayloadJson: JSON.stringify(payload)
     }});
-    return { ok: false, code: 'UNKNOWN_ORDER_CODE', message: `Không tìm thấy mã đơn trong nội dung: "${rawContent}"` };
+    if (typeof options.onUnmatchedPayment === 'function') {
+      try {
+        await options.onUnmatchedPayment({
+          transferAmount,
+          receivingAccount,
+          transactionId,
+          rawContent,
+          timestamp: payload.transactionDate ? new Date(payload.transactionDate).getTime() : Date.now()
+        });
+      } catch (err) {
+        console.error('⚠️ [GPM Pay] Lỗi khi gọi onUnmatchedPayment:', err);
+      }
+    }
+    return { ok: true, code: 'UNMATCHED_PAYMENT_NOTIFIED', message: `Đã ghi nhận và thông báo biến động số dư tự do (+${transferAmount.toLocaleString('vi-VN')} VNĐ)` };
   }
 
   // 5. Tra cứu đơn hàng trong cơ sở dữ liệu
