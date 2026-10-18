@@ -1509,12 +1509,17 @@ async function syncTicketChannel(targetChannelId = null) {
 
 // Utility: check if user is staff (an toàn khi tương tác trong DM)
 async function isStaffMember(i) {
-  if (!i.guild) return false;
+  if (!i || !i.guild) return false;
+  const userId = i.user?.id || i.author?.id || i.id;
+  if (!userId) return false;
+  if (i.guild.ownerId && i.guild.ownerId === userId) return true;
   const staffRoleId = process.env.STAFF_ROLE_ID;
   try {
-    const member = await i.guild.members.fetch(i.user.id).catch(() => null);
+    const member = await i.guild.members.fetch(userId).catch(() => null);
     if (!member) return false;
-    return member.permissions.has(PermissionsBitField.Flags.ManageGuild) ||
+    return member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+           member.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
+           member.permissions.has(PermissionsBitField.Flags.ManageGuild) ||
            (staffRoleId && member.roles.cache.has(staffRoleId));
   } catch (_) {
     return false;
@@ -1562,38 +1567,80 @@ function resolveTicketCategoryId(guild, data) {
 }
 
 // ==========================================
-// TICKET MEMBER HELPERS (/add & /remove)
+// TICKET & PRIVATE CHANNEL MEMBER HELPERS (/add & /remove)
 // ==========================================
-async function isTicketChannel(channel) {
+function isPrivateChannel(channel) {
   if (!channel || !channel.guild || !channel.isTextBased()) return false;
+  try {
+    const everyoneRole = channel.guild.roles.everyone;
+    if (!everyoneRole) return false;
+
+    // 1. Check effective permissions for @everyone in this channel (including parent category sync)
+    const everyonePerms = channel.permissionsFor(everyoneRole);
+    if (everyonePerms && !everyonePerms.has(PermissionsBitField.Flags.ViewChannel)) {
+      return true;
+    }
+
+    // 2. Direct channel overwrites on @everyone
+    const everyoneOw = channel.permissionOverwrites?.cache?.get(everyoneRole.id);
+    if (everyoneOw && everyoneOw.deny?.has(PermissionsBitField.Flags.ViewChannel)) {
+      return true;
+    }
+
+    // 3. Category overwrites on @everyone
+    if (channel.parent) {
+      const catEveryonePerms = channel.parent.permissionsFor(everyoneRole);
+      if (catEveryonePerms && !catEveryonePerms.has(PermissionsBitField.Flags.ViewChannel)) {
+        return true;
+      }
+      const catEveryoneOw = channel.parent.permissionOverwrites?.cache?.get(everyoneRole.id);
+      if (catEveryoneOw && catEveryoneOw.deny?.has(PermissionsBitField.Flags.ViewChannel)) {
+        return true;
+      }
+    }
+  } catch (_) {}
+  return false;
+}
+
+async function isTicketChannel(channel, actor = null) {
+  if (!channel || !channel.guild || !channel.isTextBased()) return false;
+
+  // 1. Staff / Owner / Admin can use /add & /remove in any ticket, private customer channel, or channel they manage!
+  if (actor) {
+    const isStaff = await isStaffMember({ guild: channel.guild, user: actor });
+    if (isStaff) return true;
+  }
+
+  // 2. Any channel with ticket prefixes: ticket-, order-, closed-
   const name = (channel.name || '').toLowerCase();
   if (name.startsWith('ticket-') || name.startsWith('order-') || name.startsWith('closed-')) return true;
+
+  // 3. Any channel inside configured Ticket category
   try {
     const data = getMenuData();
     const ticketCatId = resolveTicketCategoryId(channel.guild, data);
     if (ticketCatId && channel.parentId === ticketCatId) return true;
   } catch (_) {}
+
+  // 4. Any ticket recorded in Database
   try {
     const ticket = await prisma.ticket.findFirst({ where: { channelId: channel.id } }).catch(() => null);
     if (ticket) return true;
   } catch (_) {}
+
+  // 5. Any PRIVATE channel (kênh riêng tư của khách quen, đối tác, VIP: #rs-store, #toki, #hoang-chi-linh, etc.)
+  if (isPrivateChannel(channel)) return true;
+
   return false;
 }
 
 async function canManageTicketMembers(channel, user) {
   if (!channel || !channel.guild || !user) return false;
-  // 1. Staff / Admin bypass
+  // 1. Staff / Admin / Owner bypass
   try {
-    const member = await channel.guild.members.fetch(user.id).catch(() => null);
-    if (member) {
-      if (member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-          member.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
-          member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-        return true;
-      }
-      const staffRoleId = process.env.STAFF_ROLE_ID;
-      if (staffRoleId && member.roles.cache.has(staffRoleId)) return true;
-    }
+    if (channel.guild.ownerId === user.id) return true;
+    const isStaff = await isStaffMember({ guild: channel.guild, user });
+    if (isStaff) return true;
   } catch (_) {}
 
   // 2. Ticket order in DB check (Ticket creator or assigned seller/handler)
@@ -1616,7 +1663,7 @@ async function canManageTicketMembers(channel, user) {
     }
   } catch (_) {}
 
-  // 3. Fallback: Check if user has explicit allow ViewChannel overwrite on this channel
+  // 3. Fallback: If channel is private and user has explicit allow ViewChannel overwrite on this channel
   const ow = channel.permissionOverwrites?.cache?.get(user.id);
   if (ow && ow.allow?.has(PermissionsBitField.Flags.ViewChannel)) {
     return true;
@@ -1626,22 +1673,22 @@ async function canManageTicketMembers(channel, user) {
 }
 
 async function handleAddTicketMember(channel, actor, targetUser) {
-  const isTicket = await isTicketChannel(channel);
-  if (!isTicket) {
-    return { ok: false, error: '❌ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket!' };
+  const isEligible = await isTicketChannel(channel, actor);
+  if (!isEligible) {
+    return { ok: false, error: '❌ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket hoặc kênh riêng tư của khách!' };
   }
 
   const canManage = await canManageTicketMembers(channel, actor);
   if (!canManage) {
-    return { ok: false, error: '❌ Bạn không có quyền thêm thành viên vào ticket này. (Chỉ Staff hoặc chủ sở hữu Ticket)' };
+    return { ok: false, error: '❌ Bạn không có quyền thêm thành viên vào kênh này. (Chỉ Staff hoặc chủ sở hữu Ticket)' };
   }
 
   if (!targetUser) {
-    return { ok: false, error: '⚠️ Vui lòng chỉ định một người dùng hợp lệ để thêm vào ticket.' };
+    return { ok: false, error: '⚠️ Vui lòng chỉ định một người dùng hợp lệ để thêm vào kênh.' };
   }
 
   if (targetUser.id === client.user.id) {
-    return { ok: false, error: '🤖 Bot đã có mặt trong ticket rồi!' };
+    return { ok: false, error: '🤖 Bot đã có mặt trong kênh rồi!' };
   }
 
   const targetMember = await channel.guild.members.fetch(targetUser.id).catch(() => null);
@@ -1651,7 +1698,7 @@ async function handleAddTicketMember(channel, actor, targetUser) {
 
   const existingOw = channel.permissionOverwrites.cache.get(targetUser.id);
   if (existingOw && existingOw.allow?.has(PermissionsBitField.Flags.ViewChannel)) {
-    return { ok: false, error: `ℹ️ <@${targetUser.id}> đã có mặt trong ticket này rồi!` };
+    return { ok: false, error: `ℹ️ <@${targetUser.id}> đã có mặt trong kênh này rồi!` };
   }
 
   try {
@@ -1664,46 +1711,46 @@ async function handleAddTicketMember(channel, actor, targetUser) {
     });
 
     const embed = new EmbedBuilder()
-      .setDescription(`👋 <@${targetUser.id}> đã được thêm vào ticket bởi <@${actor.id}>!`)
+      .setDescription(`👋 <@${targetUser.id}> đã được thêm vào kênh bởi <@${actor.id}>!`)
       .setColor(0x00C2A8)
       .setTimestamp();
 
     await channel.send({ content: `Chào mừng <@${targetUser.id}>!`, embeds: [embed] });
 
-    return { ok: true, message: `✅ Đã thêm <@${targetUser.id}> vào ticket thành công!` };
+    return { ok: true, message: `✅ Đã thêm <@${targetUser.id}> vào kênh thành công!` };
   } catch (err) {
-    console.error('Lỗi khi thêm user vào ticket:', err);
+    console.error('Lỗi khi thêm user vào kênh:', err);
     return { ok: false, error: `❌ Không thể thêm thành viên: ${err.message}` };
   }
 }
 
 async function handleRemoveTicketMember(channel, actor, targetUser) {
-  const isTicket = await isTicketChannel(channel);
-  if (!isTicket) {
-    return { ok: false, error: '❌ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket!' };
+  const isEligible = await isTicketChannel(channel, actor);
+  if (!isEligible) {
+    return { ok: false, error: '❌ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket hoặc kênh riêng tư của khách!' };
   }
 
   const canManage = await canManageTicketMembers(channel, actor);
   if (!canManage) {
-    return { ok: false, error: '❌ Bạn không có quyền xóa thành viên khỏi ticket này. (Chỉ Staff hoặc chủ sở hữu Ticket)' };
+    return { ok: false, error: '❌ Bạn không có quyền xóa thành viên khỏi kênh này. (Chỉ Staff hoặc chủ sở hữu Ticket)' };
   }
 
   if (!targetUser) {
-    return { ok: false, error: '⚠️ Vui lòng chỉ định một người dùng hợp lệ để xóa khỏi ticket.' };
+    return { ok: false, error: '⚠️ Vui lòng chỉ định một người dùng hợp lệ để xóa khỏi kênh.' };
   }
 
   if (targetUser.id === client.user.id) {
-    return { ok: false, error: '❌ Không thể xóa Bot khỏi ticket!' };
+    return { ok: false, error: '❌ Không thể xóa Bot khỏi kênh!' };
   }
 
   if (targetUser.id === actor.id) {
-    return { ok: false, error: '⚠️ Bạn không thể tự xóa chính mình khỏi ticket bằng lệnh này.' };
+    return { ok: false, error: '⚠️ Bạn không thể tự xóa chính mình khỏi kênh bằng lệnh này.' };
   }
 
   const targetIsStaff = await isStaffMember({ guild: channel.guild, user: targetUser });
   const actorIsStaff = await isStaffMember({ guild: channel.guild, user: actor });
   if (targetIsStaff && !actorIsStaff) {
-    return { ok: false, error: '❌ Bạn không có quyền xóa nhân viên hỗ trợ (Staff) khỏi ticket!' };
+    return { ok: false, error: '❌ Bạn không có quyền xóa nhân viên hỗ trợ (Staff) khỏi kênh!' };
   }
 
   let dbTicket = null;
@@ -1720,7 +1767,7 @@ async function handleRemoveTicketMember(channel, actor, targetUser) {
 
   const existingOw = channel.permissionOverwrites.cache.get(targetUser.id);
   if (!existingOw || !existingOw.allow?.has(PermissionsBitField.Flags.ViewChannel)) {
-    return { ok: false, error: `ℹ️ <@${targetUser.id}> không có trong ticket này!` };
+    return { ok: false, error: `ℹ️ <@${targetUser.id}> không có trong kênh này!` };
   }
 
   try {
@@ -1732,15 +1779,15 @@ async function handleRemoveTicketMember(channel, actor, targetUser) {
     });
 
     const embed = new EmbedBuilder()
-      .setDescription(`🚫 <@${targetUser.id}> đã được đưa ra khỏi ticket bởi <@${actor.id}>.`)
+      .setDescription(`🚫 <@${targetUser.id}> đã được đưa ra khỏi kênh bởi <@${actor.id}>.`)
       .setColor(0xED4245)
       .setTimestamp();
 
     await channel.send({ embeds: [embed] });
 
-    return { ok: true, message: `✅ Đã xóa <@${targetUser.id}> khỏi ticket thành công!` };
+    return { ok: true, message: `✅ Đã xóa <@${targetUser.id}> khỏi kênh thành công!` };
   } catch (err) {
-    console.error('Lỗi khi xóa user khỏi ticket:', err);
+    console.error('Lỗi khi xóa user khỏi kênh:', err);
     return { ok: false, error: `❌ Không thể xóa thành viên: ${err.message}` };
   }
 }
@@ -1781,9 +1828,9 @@ client.on('messageCreate', async (message) => {
     const trimmed = content.trim();
     const lower = trimmed.toLowerCase();
 
-    // Lệnh nhanh trong Ticket: /add @user hoặc !add @user
+    // Lệnh nhanh trong Ticket / Kênh riêng: /add @user hoặc !add @user
     if (lower.startsWith('/add') || lower.startsWith('!add')) {
-      if (await isTicketChannel(message.channel)) {
+      if (await isTicketChannel(message.channel, message.author)) {
         let targets = Array.from(message.mentions.users.values()).filter(u => u.id !== client.user.id);
         if (targets.length === 0) {
           const parts = trimmed.split(/\s+/).slice(1);
@@ -1808,9 +1855,9 @@ client.on('messageCreate', async (message) => {
       }
     }
 
-    // Lệnh nhanh trong Ticket: /remove @user hoặc !remove @user
+    // Lệnh nhanh trong Ticket / Kênh riêng: /remove @user hoặc !remove @user
     if (lower.startsWith('/remove') || lower.startsWith('!remove')) {
-      if (await isTicketChannel(message.channel)) {
+      if (await isTicketChannel(message.channel, message.author)) {
         let targets = Array.from(message.mentions.users.values()).filter(u => u.id !== client.user.id);
         if (targets.length === 0) {
           const parts = trimmed.split(/\s+/).slice(1);
