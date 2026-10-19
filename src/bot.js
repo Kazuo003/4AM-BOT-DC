@@ -1792,6 +1792,139 @@ async function handleRemoveTicketMember(channel, actor, targetUser) {
   }
 }
 
+// ==========================================
+// QUICK BILL HELPERS (/bill)
+// ==========================================
+function parseAmountInput(str) {
+  if (typeof str === 'number') return Math.round(str);
+  if (!str) return 0;
+  const clean = String(str).toLowerCase().trim().replace(/,/g, '').replace(/\./g, '');
+  if (clean.endsWith('k')) {
+    return Math.round((parseFloat(clean.slice(0, -1)) || 0) * 1000);
+  }
+  if (clean.endsWith('m') || clean.endsWith('tr')) {
+    const num = parseFloat(clean.replace(/(m|tr)$/, '')) || 0;
+    return Math.round(num * 1000000);
+  }
+  return parseInt(clean, 10) || 0;
+}
+
+async function handleQuickBill(channel, actor, { amountStr, note = '', targetUser = null }) {
+  const isStaff = await isStaffMember({ guild: channel.guild, user: actor });
+  if (!isStaff) {
+    return { ok: false, error: '❌ Bạn không có quyền sử dụng lệnh tạo hóa đơn. (Chỉ Staff)' };
+  }
+
+  const amount = parseAmountInput(amountStr);
+  if (!amount || amount < 1000) {
+    return { ok: false, error: '⚠️ Số tiền không hợp lệ! Vui lòng nhập số tiền từ 1.000 VNĐ trở lên (VD: `50k`, `100k`, `250000`).' };
+  }
+
+  const orderNo = `BILL-${shortOrderNo()}`;
+  const buyerUser = targetUser || actor;
+  const dbUser = await ensureUser(buyerUser.id, null, buyerUser.globalName || buyerUser.username, null);
+
+  const product = await findOrCreateProduct({
+    type: 'QUICK_BILL',
+    name: note ? `Thanh toán: ${note}` : 'Hóa đơn thanh toán nhanh',
+    sku: `BILL_${orderNo}`,
+    specJson: JSON.stringify({ note, createdBy: actor.tag || actor.username }),
+    priceCents: amount,
+    currency: 'VNĐ'
+  });
+
+  const payRes = await createPayosPayment({
+    orderNo,
+    amount,
+    description: `4AM ${orderNo}`
+  });
+
+  if (!payRes.ok) {
+    return { ok: false, error: `❌ Không thể tạo mã thanh toán PayOS: ${payRes.error}` };
+  }
+
+  const order = await createOrder({
+    orderNo,
+    userId: dbUser.id,
+    productId: product.id,
+    planSnapshotJson: JSON.stringify({
+      isQuickBill: true,
+      note,
+      staffId: actor.id,
+      staffTag: actor.tag || actor.username
+    }),
+    amountCents: amount,
+    currency: 'VNĐ'
+  });
+
+  await prisma.order.update({
+    where: { id: order.id },
+    data: {
+      paymentProvider: 'PAYOS',
+      providerRef: String(payRes.orderCode)
+    }
+  });
+
+  if (channel.guild) {
+    await attachTicket(order.id, channel.guild.id, channel.id);
+  }
+
+  const qrImageUrl = buildVietQrImageUrl({
+    bankBin: payRes.bin,
+    accountNumber: payRes.accountNumber,
+    amount: payRes.amount,
+    description: payRes.description,
+    accountName: payRes.accountName
+  });
+
+  const formattedPrice = formatPrice(amount, 'VNĐ');
+  const embed = new EmbedBuilder()
+    .setTitle(`🧾 HÓA ĐƠN THANH TOÁN — #${orderNo}`)
+    .setDescription([
+      `Xin chào ${targetUser ? `<@${targetUser.id}>` : 'bạn'}! Hóa đơn thanh toán đã được tạo bởi <@${actor.id}>.`,
+      '',
+      `💰 **Số tiền cần thanh toán:** **${formattedPrice}**`,
+      note ? `📝 **Ghi chú đơn hàng:** **${note}**` : '',
+      '',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '💳 **THÔNG TIN CHUYỂN KHOẢN:**',
+      `🏛️ **Ngân hàng:** \`${process.env.BANK_NAME || 'BIDV'}\``,
+      `🔢 **Số tài khoản:** \`${payRes.accountNumber || process.env.BANK_ACCOUNT}\``,
+      `👤 **Chủ tài khoản:** \`${payRes.accountName || process.env.BANK_OWNER}\``,
+      `📝 **Nội dung chuyển khoản:** \`${payRes.description}\``,
+      '*(Vui lòng điền đúng nội dung để hệ thống tự động xác nhận sau 2 giây)*',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    ].filter(Boolean).join('\n'))
+    .setImage(qrImageUrl)
+    .setColor(0x00C2A8)
+    .setFooter({ text: '4AM Shop • Thanh toán tự động 24/7' })
+    .setTimestamp();
+
+  const row = new ActionRowBuilder();
+  if (payRes.checkoutUrl) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setLabel('💳 Trang thanh toán PayOS')
+        .setStyle(ButtonStyle.Link)
+        .setURL(payRes.checkoutUrl)
+    );
+  }
+  row.addComponents(
+    new ButtonBuilder()
+      .setCustomId(`check_pay_${order.id}`)
+      .setLabel('🔄 Kiểm tra thanh toán')
+      .setStyle(ButtonStyle.Success)
+  );
+
+  await channel.send({
+    content: targetUser ? `<@${targetUser.id}>` : undefined,
+    embeds: [embed],
+    components: [row]
+  });
+
+  return { ok: true, orderNo, amount };
+}
+
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
   try {
@@ -1877,6 +2010,25 @@ client.on('messageCreate', async (message) => {
           if (!res.ok) {
             await message.reply({ content: res.error }).catch(() => {});
           }
+        }
+        return;
+      }
+    }
+
+    // Lệnh nhanh tạo hóa đơn: /bill 50k hoặc !bill 50k (Staff)
+    if (lower.startsWith('/bill') || lower.startsWith('!bill')) {
+      const isStaff = await isStaffMember({ guild: message.guild, user: message.author });
+      if (isStaff) {
+        const parts = trimmed.split(/\s+/).slice(1);
+        if (parts.length === 0) {
+          return message.reply({ content: '⚠️ Cú pháp: `/bill <số_tiền> [ghi_chú] [@khách]` (VD: `/bill 50k rs-store`)' }).catch(() => {});
+        }
+        const amountStr = parts[0];
+        const targetUser = message.mentions.users.first() || null;
+        const note = parts.slice(1).filter(p => !p.startsWith('<@')).join(' ');
+        const res = await handleQuickBill(message.channel, message.author, { amountStr, note, targetUser });
+        if (!res.ok) {
+          return message.reply({ content: res.error }).catch(() => {});
         }
         return;
       }
@@ -5090,7 +5242,7 @@ if (i.isChatInputCommand() && i.commandName === 'check-bank') {
   await i.deferReply({ ephemeral: true });
   const limit = Math.min(20, Math.max(1, i.options.getInteger('limit') || 5));
   const txs = await prisma.paymentTransaction.findMany({
-    orderBy: { createdAt: 'desc' },
+    orderBy: { processedAt: 'desc' },
     take: limit
   });
   if (!txs.length) {
@@ -5101,7 +5253,7 @@ if (i.isChatInputCommand() && i.commandName === 'check-bank') {
     try { payload = JSON.parse(tx.rawPayloadJson || '{}'); } catch (_) {}
     const content = payload.description || payload.content || tx.orderNo || 'Chuyển tiền tự do';
     const amountStr = `+${Number(tx.amount || 0).toLocaleString('vi-VN')} VNĐ`;
-    const timeStr = `<t:${Math.floor(new Date(tx.createdAt).getTime() / 1000)}:R>`;
+    const timeStr = `<t:${Math.floor(new Date(tx.processedAt).getTime() / 1000)}:R>`;
     const tag = (tx.status === 'SUCCESS' || tx.status === 'PAID') ? '✅ Đã đối soát' : '⚠️ Tiền tự do';
     return `${idx + 1}. **${amountStr}** [${tag}]\n   • **Nội dung:** \`${content}\`\n   • **Mã GD:** \`${tx.transactionId}\` (${timeStr})`;
   });
@@ -5114,6 +5266,68 @@ if (i.isChatInputCommand() && i.commandName === 'check-bank') {
     .setTimestamp();
 
   return i.editReply({ embeds: [embed] });
+}
+
+// ==========================================
+// STAFF TOOL: TẠO HÓA ĐƠN NHANH (/bill)
+// ==========================================
+if (i.isChatInputCommand() && i.commandName === 'bill') {
+  await i.deferReply({ ephemeral: true });
+  const amountStr = i.options.getString('amount', true);
+  const note = i.options.getString('note') || '';
+  const targetUser = i.options.getUser('user') || null;
+
+  const res = await handleQuickBill(i.channel, i.user, { amountStr, note, targetUser });
+  if (!res.ok) {
+    return i.editReply({ content: res.error });
+  }
+  return i.editReply({ content: `✅ Đã tạo hóa đơn **#${res.orderNo}** (${formatPrice(res.amount, 'VNĐ')}) thành công!` });
+}
+
+// Button kiểm tra thanh toán hóa đơn nhanh
+if (i.isButton() && i.customId.startsWith('check_pay_')) {
+  await i.deferReply({ ephemeral: true });
+  const orderId = i.customId.split('check_pay_')[1];
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { ticket: true, user: true, product: true }
+  });
+  if (!order) {
+    return i.editReply({ content: '❌ Không tìm thấy đơn hàng trong hệ thống.' });
+  }
+  if (order.status === 'PAID' || order.status === 'COMPLETED') {
+    return i.editReply({ content: `✅ Đơn hàng **#${order.orderNo}** đã được thanh toán thành công trước đó!` });
+  }
+  if (!order.providerRef) {
+    return i.editReply({ content: '⚠️ Đơn hàng này không có mã tham chiếu PayOS.' });
+  }
+
+  const info = await getPayosPaymentInfo(order.providerRef);
+  if (info && info.status === 'PAID') {
+    await updateOrderStatus(order.id, 'PAID');
+    await prisma.paymentTransaction.create({
+      data: {
+        transactionId: `PAYOS-CHECK-${order.providerRef}-${Date.now()}`,
+        orderNo: order.orderNo,
+        orderId: order.id,
+        amount: info.amount || order.amountCents,
+        expectedAmount: order.amountCents,
+        receivingAccount: process.env.BANK_ACCOUNT || '8888217932',
+        status: 'SUCCESS',
+        source: 'PAYOS_CHECK_BUTTON',
+        rawPayloadJson: JSON.stringify(info)
+      }
+    });
+    await notifyProcessedPayment(order, {
+      transferAmount: info.amount || order.amountCents,
+      receivingAccount: process.env.BANK_ACCOUNT || '8888217932',
+      transactionId: `PAYOS-${order.providerRef}`,
+      rawContent: `PayOS #${order.providerRef}`
+    });
+    return i.editReply({ content: `🎉 **Thanh toán thành công!** Đơn hàng **#${order.orderNo}** đã được xác nhận thanh toán.` });
+  } else {
+    return i.editReply({ content: '⏳ Hệ thống chưa nhận được thanh toán từ ngân hàng. Nếu bạn vừa chuyển khoản, vui lòng đợi 5-10 giây rồi bấm kiểm tra lại nhé!' });
+  }
 }
 
 // Giveaway Button Click: Tham gia / Rời khỏi

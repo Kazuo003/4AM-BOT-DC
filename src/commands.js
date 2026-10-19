@@ -218,6 +218,23 @@ const commands = [
     .addIntegerOption(opt =>
       opt.setName('limit')
         .setDescription('Số lượng giao dịch cần xem (1 - 20, mặc định: 5)')
+        .setRequired(false)),
+
+  // Staff tool: Tạo hóa đơn thanh toán nhanh PayOS VietQR
+  new SlashCommandBuilder()
+    .setName('bill')
+    .setDescription('Tạo hóa đơn thanh toán nhanh kèm mã QR VietQR (Staff)')
+    .addStringOption(opt =>
+      opt.setName('amount')
+        .setDescription('Số tiền cần thanh toán (VD: 50k, 100k, 250000)')
+        .setRequired(true))
+    .addStringOption(opt =>
+      opt.setName('note')
+        .setDescription('Ghi chú nội dung / tên sản phẩm (VD: rs-store, 1 tháng canva...)')
+        .setRequired(false))
+    .addUserOption(opt =>
+      opt.setName('user')
+        .setDescription('Khách hàng cần thanh toán (tùy chọn để tag khách)')
         .setRequired(false))
 ];
 
