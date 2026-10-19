@@ -292,6 +292,7 @@ function staffActionEmbed({ title, actorId, details }) {
 // ----- Rate limit: one ticket per X minutes -----
 const TICKET_COOLDOWN_MIN = parseInt(process.env.RATE_LIMIT_MINUTES || '10', 10);
 const lastTicketAt = new Map(); // userId -> Date
+const lastStaffCallAt = new Map(); // key -> timestamp
 const autoCloseTimers = new Map(); // channelId -> { timer, messageId, orderNo }
 
 function canOpenTicket(userId) {
@@ -1507,20 +1508,63 @@ async function syncTicketChannel(targetChannelId = null) {
 // ----------- Events -----------
 //
 
-// Utility: check if user is staff (an toàn khi tương tác trong DM)
+// Utility: check if user is staff or higher (an toàn khi tương tác trong DM/Ticket)
 async function isStaffMember(i) {
   if (!i || !i.guild) return false;
   const userId = i.user?.id || i.author?.id || i.id;
   if (!userId) return false;
   if (i.guild.ownerId && i.guild.ownerId === userId) return true;
-  const staffRoleId = process.env.STAFF_ROLE_ID;
+
+  let staffRoleId = process.env.STAFF_ROLE_ID;
+  if (!staffRoleId && typeof getMenuData === 'function') {
+    try {
+      const data = getMenuData();
+      staffRoleId = data?.channels?.staffRoleId;
+    } catch (_) {}
+  }
+  if (!staffRoleId) staffRoleId = '1472036681048658041';
+
   try {
-    const member = await i.guild.members.fetch(userId).catch(() => null);
+    const member = (i.member && i.member.roles) ? i.member : await i.guild.members.fetch(userId).catch(() => null);
     if (!member) return false;
-    return member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-           member.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
-           member.permissions.has(PermissionsBitField.Flags.ManageGuild) ||
-           (staffRoleId && member.roles.cache.has(staffRoleId));
+
+    // Permissions: Administrator, ManageChannels, ManageGuild
+    if (member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+        member.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
+        member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+      return true;
+    }
+
+    // Direct staff role
+    if (staffRoleId && member.roles.cache.has(staffRoleId)) {
+      return true;
+    }
+
+    // Role hierarchy: check if member has any role >= staff role in position
+    if (staffRoleId) {
+      let staffRole = i.guild.roles.cache.get(staffRoleId);
+      if (!staffRole) {
+        staffRole = await i.guild.roles.fetch(staffRoleId).catch(() => null);
+      }
+      if (staffRole && staffRole.position > 0 && member.roles.highest && member.roles.highest.id !== i.guild.id) {
+        if (member.roles.highest.position >= staffRole.position) {
+          return true;
+        }
+      }
+    }
+
+    // Registered seller check
+    if (typeof getMenuData === 'function') {
+      try {
+        const mData = getMenuData();
+        const sellers = mData?.sellers || {};
+        if (Object.values(sellers).some(s => s && s.discordId === userId)) {
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    return false;
   } catch (_) {
     return false;
   }
@@ -2500,7 +2544,30 @@ client.on('interactionCreate', async (i) => {
   // --- Nút Gọi Staff trong Ticket Hỗ Trợ ---
   if (i.isButton() && i.customId.startsWith('ping_staff_ticket|')) {
     const data = getMenuData();
-    const staffRoleId = data.channels?.staffRoleId || process.env.STAFF_ROLE_ID || '1379354084510793799';
+    const staffRoleId = data.channels?.staffRoleId || process.env.STAFF_ROLE_ID || '1472036681048658041';
+
+    // Chặn người có role Staff hoặc role lớn hơn Staff (Admin, Quản trị viên, Chủ server)
+    const isStaff = await isStaffMember(i);
+    if (isStaff) {
+      return i.reply({
+        content: '❌ Bạn là **Staff / Quản trị viên**, nút này chỉ dành cho khách hàng cần hỗ trợ!',
+        ephemeral: true
+      });
+    }
+
+    // Cooldown 60s giữa các lần gọi Staff của khách hàng để chống spam
+    const callKey = `${i.channelId}_${i.user.id}`;
+    const lastCalled = lastStaffCallAt.get(callKey) || 0;
+    const now = Date.now();
+    if (now - lastCalled < 60000) {
+      const waitSec = Math.ceil((60000 - (now - lastCalled)) / 1000);
+      return i.reply({
+        content: `⏳ Bạn vừa bấm gọi Staff rồi! Vui lòng đợi trong giây lát hoặc thử lại sau **${waitSec} giây**.`,
+        ephemeral: true
+      });
+    }
+    lastStaffCallAt.set(callKey, now);
+
     await i.reply({
       content: `🔔 <@&${staffRoleId}> ơi, khách hàng <@${i.user.id}> đang cần hỗ trợ tại ticket này!`,
       allowedMentions: { roles: [staffRoleId], users: [i.user.id] }
