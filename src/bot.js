@@ -2569,7 +2569,7 @@ client.on('interactionCreate', async (i) => {
     lastStaffCallAt.set(callKey, now);
 
     await i.reply({
-      content: `🔔 <@&${staffRoleId}> ơi, khách hàng <@${i.user.id}> đang cần hỗ trợ tại ticket này!`,
+      content: `🔔 <@&${staffRoleId}> các bạn nhân viên ơi hỗ trợ mình với!`,
       allowedMentions: { roles: [staffRoleId], users: [i.user.id] }
     });
     return;
