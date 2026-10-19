@@ -1837,6 +1837,75 @@ async function handleRemoveTicketMember(channel, actor, targetUser) {
 }
 
 // ==========================================
+// TICKET RENAME HELPERS (/name & /rename)
+// ==========================================
+function sanitizeChannelName(input) {
+  if (!input || typeof input !== 'string') return '';
+  return input
+    .trim()
+    .replace(/[\/\\]+/g, '-')    // Thay thế / và \ thành - (VD: 21/10/2026 -> 21-10-2026)
+    .replace(/\s+/g, '-')        // Thay thế khoảng trắng thành -
+    .replace(/-{2,}/g, '-')      // Gộp nhiều dấu gạch ngang liên tiếp thành 1
+    .replace(/^-+|-+$/g, '')     // Bỏ dấu gạch ở đầu/cuối
+    .slice(0, 100);              // Giới hạn tối đa 100 ký tự theo Discord
+}
+
+async function handleRenameTicketChannel(channel, actor, newRawName) {
+  if (!channel || !channel.guild) {
+    return { ok: false, error: '❌ Không tìm thấy thông tin kênh.' };
+  }
+
+  const isEligible = await isTicketChannel(channel, actor);
+  if (!isEligible) {
+    return { ok: false, error: '❌ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket hoặc kênh riêng tư của khách!' };
+  }
+
+  const canManage = await canManageTicketMembers(channel, actor);
+  if (!canManage) {
+    return { ok: false, error: '❌ Bạn không có quyền đổi tên kênh này. (Chỉ Staff hoặc chủ sở hữu Ticket)' };
+  }
+
+  const sanitized = sanitizeChannelName(newRawName);
+  if (!sanitized || sanitized.length < 1) {
+    return { ok: false, error: '❌ Tên kênh mới không hợp lệ. Vui lòng thử lại (VD: `/name Plong 301M 21/10/2026`).' };
+  }
+
+  const oldName = channel.name;
+  if (oldName.toLowerCase() === sanitized.toLowerCase()) {
+    return { ok: false, error: `ℹ️ Kênh này đã có tên là **\`#${sanitized}\`** rồi!` };
+  }
+
+  try {
+    await channel.setName(sanitized, `Đổi tên kênh bởi ${actor.tag || actor.username || actor.id}`);
+  } catch (err) {
+    console.error('[Rename Ticket Channel] Error:', err);
+    if (err?.code === 50035 || err?.rawError?.message?.includes('regex')) {
+      return { ok: false, error: '❌ Tên kênh chứa ký tự không hợp lệ theo quy định của Discord.' };
+    }
+    if (err?.code === 429 || err?.status === 429 || err?.message?.toLowerCase().includes('rate limit')) {
+      return { ok: false, error: '⏳ Kênh này vừa đổi tên quá nhiều lần! Discord giới hạn chỉ được đổi tên tối đa **2 lần trong 10 phút**. Vui lòng đợi thêm một lúc rồi thử lại nhé.' };
+    }
+    return { ok: false, error: `❌ Không thể đổi tên kênh: ${err.message || 'Lỗi không xác định'}` };
+  }
+
+  // Gửi thông báo vào kênh
+  try {
+    const embed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setDescription(`✏️ Kênh đã được <@${actor.id}> đổi tên từ \`#${oldName}\` thành **\`#${sanitized}\`**`)
+      .setTimestamp();
+    await channel.send({ embeds: [embed] });
+  } catch (_) {}
+
+  return {
+    ok: true,
+    oldName,
+    newName: sanitized,
+    message: `✅ Đã đổi tên kênh thành **\`#${sanitized}\`** thành công!`
+  };
+}
+
+// ==========================================
 // QUICK BILL HELPERS (/bill)
 // ==========================================
 function parseAmountInput(str) {
@@ -2056,6 +2125,24 @@ client.on('messageCreate', async (message) => {
           }
         }
         return;
+      }
+    }
+
+    // Lệnh nhanh đổi tên Ticket / Kênh riêng: /name <tên> hoặc !name <tên> (hoặc /rename)
+    if (lower.startsWith('/name') || lower.startsWith('!name') || lower.startsWith('/rename') || lower.startsWith('!rename')) {
+      const match = trimmed.match(/^(\/name|!name|\/rename|!rename)(?:\s+(.+))?$/i);
+      if (match) {
+        if (await isTicketChannel(message.channel, message.author)) {
+          const rawNewName = match[2]?.trim();
+          if (!rawNewName) {
+            return message.reply({ content: '⚠️ Cú pháp: `/name <tên_kênh_mới>` (VD: `/name Plong 301M 21/10/2026`)' }).catch(() => {});
+          }
+          const res = await handleRenameTicketChannel(message.channel, message.author, rawNewName);
+          if (!res.ok) {
+            await message.reply({ content: res.error }).catch(() => {});
+          }
+          return;
+        }
       }
     }
 
@@ -5296,6 +5383,13 @@ if (i.isChatInputCommand() && i.commandName === 'remove') {
   await i.deferReply({ ephemeral: true });
   const targetUser = i.options.getUser('user', true);
   const res = await handleRemoveTicketMember(i.channel, i.user, targetUser);
+  return i.editReply({ content: res.ok ? res.message : res.error });
+}
+
+if (i.isChatInputCommand() && (i.commandName === 'name' || i.commandName === 'rename')) {
+  await i.deferReply({ ephemeral: true });
+  const newName = i.options.getString('name', true);
+  const res = await handleRenameTicketChannel(i.channel, i.user, newName);
   return i.editReply({ content: res.ok ? res.message : res.error });
 }
 

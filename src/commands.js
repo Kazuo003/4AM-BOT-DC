@@ -211,6 +211,23 @@ const commands = [
         .setDescription('Thành viên cần xóa khỏi ticket')
         .setRequired(true)),
 
+  // Ticket management: Rename ticket channel (/name & /rename)
+  new SlashCommandBuilder()
+    .setName('name')
+    .setDescription('Đổi tên kênh ticket / kênh khách hàng nhanh chóng (Staff/Ticket Owner)')
+    .addStringOption(opt =>
+      opt.setName('name')
+        .setDescription('Tên mới cho kênh (VD: Plong 301M 21/10/2026)')
+        .setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('rename')
+    .setDescription('Đổi tên kênh ticket / kênh khách hàng nhanh chóng (Staff/Ticket Owner)')
+    .addStringOption(opt =>
+      opt.setName('name')
+        .setDescription('Tên mới cho kênh (VD: Plong 301M 21/10/2026)')
+        .setRequired(true)),
+
   // Staff tool: Tra cứu biến động số dư gần nhất
   new SlashCommandBuilder()
     .setName('check-bank')
