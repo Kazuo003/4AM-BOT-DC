@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "messageId": "1561764769407569961",
+    "channelId": "1513357276256403558",
+    "guildId": "1369824487524143154",
+    "hostId": "895890393806274570",
+    "prize": "50k",
+    "description": "Mời 5 người gửi tại <#1513357316270063677>",
+    "durationMs": 86400000,
+    "createdAt": 1792424146352,
+    "endsAt": 1792510546352,
+    "winnersCount": 1,
+    "participants": [],
+    "winners": [],
+    "ended": false
+  }
+]
