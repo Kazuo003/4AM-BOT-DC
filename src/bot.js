@@ -5528,6 +5528,39 @@ if (i.isButton() && i.customId.startsWith('giveaway_ended|')) {
     ephemeral: true
   });
 }
+
+// --- Pick Role Button Handler ---
+if (i.isButton() && i.customId.startsWith('pick_role|')) {
+  await i.deferReply({ ephemeral: true });
+  const roleId = i.customId.split('|')[1];
+
+  if (!i.guild) {
+    return i.editReply({ content: '❌ Lỗi: Thao tác này chỉ có thể thực hiện trên Server.' });
+  }
+
+  const role = i.guild.roles.cache.get(roleId) || await i.guild.roles.fetch(roleId).catch(() => null);
+  if (!role) {
+    return i.editReply({ content: '❌ Role này không tồn tại hoặc đã bị xóa.' });
+  }
+
+  const member = i.member || await i.guild.members.fetch(i.user.id).catch(() => null);
+  if (!member) {
+    return i.editReply({ content: '❌ Không tìm thấy thông tin thành viên của bạn.' });
+  }
+
+  try {
+    if (member.roles.cache.has(roleId)) {
+      await member.roles.remove(roleId, 'Bỏ chọn role qua kênh pick-role');
+      return i.editReply({ content: `🔕 Bạn đã **hủy nhận** role <@&${roleId}>. Bạn sẽ không nhận thông báo từ role này nữa!` });
+    } else {
+      await member.roles.add(roleId, 'Nhận role qua kênh pick-role');
+      return i.editReply({ content: `🔔 Bạn đã **nhận thành công** role <@&${roleId}>! Bạn sẽ được nhận thông báo sớm nhất từ shop.` });
+    }
+  } catch (err) {
+    console.error('[Pick Role Error]', err);
+    return i.editReply({ content: `❌ Không thể thay đổi role: ${err.message || 'Lỗi phân quyền bot'}` });
+  }
+}
     //
     // Plan selection inside ticket → create order + ask extras
     //
