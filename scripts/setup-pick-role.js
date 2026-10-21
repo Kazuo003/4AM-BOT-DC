@@ -2,8 +2,6 @@ require('dotenv').config();
 const {
   Client,
   GatewayIntentBits,
-  ChannelType,
-  PermissionsBitField,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
@@ -17,124 +15,40 @@ client.on('clientReady', async () => {
     const guild = await client.guilds.fetch(process.env.GUILD_ID);
     console.log('Connected to Guild:', guild.name);
 
-    // 1. Kiểm tra / Tạo role Sale & Event
+    // 1. Xóa role Sale nếu còn tồn tại
     const roles = await guild.roles.fetch();
-    let stockRole = roles.get('1428223724103925771') || roles.find(r => r.name.toLowerCase() === 'stock');
-    let giveawayRole = roles.get('1428223579316687029') || roles.find(r => r.name.toLowerCase() === 'giveaways' || r.name.toLowerCase() === 'giveaway');
-
-    let saleRole = roles.find(r => r.name.toLowerCase() === 'sale');
-    if (!saleRole) {
-      saleRole = await guild.roles.create({
-        name: 'Sale',
-        color: 0xFF5722,
-        reason: 'Tạo role Sale cho hệ thống Pick Role'
-      });
-      console.log('Created Role Sale:', saleRole.id);
+    const saleRole = roles.get('1562280272211484762') || roles.find(r => r.name.toLowerCase() === 'sale');
+    if (saleRole) {
+      await saleRole.delete('Xóa role Sale theo yêu cầu quản trị viên');
+      console.log('✅ Đã xóa role Sale thành công!');
     } else {
-      console.log('Existing Role Sale:', saleRole.id);
+      console.log('ℹ️ Không tìm thấy role Sale (có thể đã được xóa trước đó).');
     }
 
-    let eventRole = roles.find(r => r.name.toLowerCase() === 'event');
-    if (!eventRole) {
-      eventRole = await guild.roles.create({
-        name: 'Event',
-        color: 0x9C27B0,
-        reason: 'Tạo role Event cho hệ thống Pick Role'
-      });
-      console.log('Created Role Event:', eventRole.id);
-    } else {
-      console.log('Existing Role Event:', eventRole.id);
+    // 2. Lấy role Stock, Giveaway, Event
+    const stockRole = roles.get('1428223724103925771') || roles.find(r => r.name.toLowerCase() === 'stock');
+    const giveawayRole = roles.get('1428223579316687029') || roles.find(r => r.name.toLowerCase() === 'giveaways' || r.name.toLowerCase() === 'giveaway');
+    const eventRole = roles.get('1562280274274947173') || roles.find(r => r.name.toLowerCase() === 'event');
+
+    if (!stockRole || !giveawayRole || !eventRole) {
+      throw new Error(`Thiếu role: stock=${!!stockRole}, giveaway=${!!giveawayRole}, event=${!!eventRole}`);
     }
 
-    // 2. Tạo Category 🎭 4AM ROLES (nếu chưa có)
-    const channels = await guild.channels.fetch();
-    let roleCat = channels.find(c => c && c.type === ChannelType.GuildCategory && c.name.includes('4AM ROLES'));
-    if (!roleCat) {
-      roleCat = await guild.channels.create({
-        name: '🎭 4AM ROLES',
-        type: ChannelType.GuildCategory,
-        position: 2,
-        permissionOverwrites: [
-          {
-            id: guild.roles.everyone.id,
-            allow: [PermissionsBitField.Flags.ViewChannel],
-            deny: [PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.AddReactions]
-          },
-          {
-            id: client.user.id,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.EmbedLinks,
-              PermissionsBitField.Flags.ManageChannels,
-              PermissionsBitField.Flags.ManageMessages
-            ]
-          }
-        ]
-      });
-      console.log('Created Category 🎭 4AM ROLES:', roleCat.id);
-    } else {
-      console.log('Existing Category 🎭 4AM ROLES:', roleCat.id);
-    }
+    // 3. Tìm kênh pick-role và xóa tin nhắn cũ
+    const pickRoleChannel = await guild.channels.fetch('1562280284391739442');
+    if (!pickRoleChannel) throw new Error('Không tìm thấy kênh pick-role!');
 
-    // 3. Dời 2 kênh role・info và role・info-en vào danh mục mới (giữ nguyên icon và tên)
-    const roleInfoVi = await guild.channels.fetch('1422472589313441863').catch(() => null);
-    if (roleInfoVi && roleInfoVi.parentId !== roleCat.id) {
-      await roleInfoVi.setParent(roleCat.id, { lockPermissions: false });
-      console.log('Moved 『✅』role・info into 🎭 4AM ROLES');
-    }
-
-    const roleInfoEn = await guild.channels.fetch('1548649836016832534').catch(() => null);
-    if (roleInfoEn && roleInfoEn.parentId !== roleCat.id) {
-      await roleInfoEn.setParent(roleCat.id, { lockPermissions: false });
-      console.log('Moved 『✅』role・info-en into 🎭 4AM ROLES');
-    }
-
-    // 4. Tạo kênh 『🔔』pick-role (nếu chưa có)
-    let pickRoleChannel = channels.find(c => c && c.parentId === roleCat.id && c.name.includes('pick-role'));
-    if (!pickRoleChannel) {
-      pickRoleChannel = await guild.channels.create({
-        name: '『🔔』pick-role',
-        type: ChannelType.GuildText,
-        parent: roleCat.id,
-        position: 0,
-        permissionOverwrites: [
-          {
-            id: guild.roles.everyone.id,
-            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory],
-            deny: [PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.AddReactions]
-          },
-          {
-            id: client.user.id,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.EmbedLinks,
-              PermissionsBitField.Flags.ManageMessages
-            ]
-          }
-        ]
-      });
-      console.log('Created Channel 『🔔』pick-role:', pickRoleChannel.id);
-    } else {
-      console.log('Existing Channel 『🔔』pick-role:', pickRoleChannel.id);
-    }
-
-    // Xóa tin nhắn cũ trong kênh pick-role (nếu có) để gửi bảng mới nhất
     const oldMessages = await pickRoleChannel.messages.fetch({ limit: 10 });
-    if (oldMessages.size > 0) {
-      for (const m of oldMessages.values()) {
-        await m.delete().catch(() => {});
-      }
+    for (const m of oldMessages.values()) {
+      await m.delete().catch(() => {});
     }
 
-    // 5. Gửi Embed và Nút bấm vào kênh 『🔔』pick-role
+    // 4. Tạo Embed mới chỉ gồm 3 role: Stock, Giveaways, Event
     const embed = new EmbedBuilder()
       .setTitle('🎭 4AM STORE — NHẬN ROLE THÔNG BÁO')
       .setDescription([
         'Chào mừng bạn đến với **4AM Store**! Hãy chọn các Role bên dưới để nhận thông báo sớm nhất từ Shop nhé:\n',
         `📦 **Stock** (<@&${stockRole.id}>) — Nhận ping khi có hàng mới về kho.`,
-        `🏷️ **Sale** (<@&${saleRole.id}>) — Nhận ping các đợt flash sale & ưu đãi giảm giá.`,
         `🎉 **Giveaways** (<@&${giveawayRole.id}>) — Nhận ping khi có sự kiện Giveaway phát quà.`,
         `🎊 **Event** (<@&${eventRole.id}>) — Nhận ping minigame & sự kiện cộng đồng.\n`,
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
@@ -147,17 +61,13 @@ client.on('clientReady', async () => {
       .setFooter({ text: '4AM Store • Hệ thống thông báo tự động', iconURL: guild.iconURL() })
       .setTimestamp();
 
+    // 5. Tạo 3 nút bấm
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`pick_role|${stockRole.id}`)
         .setLabel('Stock')
         .setEmoji('📦')
         .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId(`pick_role|${saleRole.id}`)
-        .setLabel('Sale')
-        .setEmoji('🏷️')
-        .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
         .setCustomId(`pick_role|${giveawayRole.id}`)
         .setLabel('Giveaways')
@@ -171,19 +81,10 @@ client.on('clientReady', async () => {
     );
 
     await pickRoleChannel.send({ embeds: [embed], components: [row] });
-    console.log('✅ Đã gửi bảng Pick Role thành công!');
-
-    console.log('DONE_SUMMARY:', JSON.stringify({
-      stockRoleId: stockRole.id,
-      saleRoleId: saleRole.id,
-      giveawayRoleId: giveawayRole.id,
-      eventRoleId: eventRole.id,
-      categoryId: roleCat.id,
-      pickRoleChannelId: pickRoleChannel.id
-    }));
+    console.log('✅ Đã cập nhật bảng Pick Role mới (chỉ gồm 3 role: Stock, Giveaways, Event)!');
 
   } catch (err) {
-    console.error('Error during setup:', err);
+    console.error('Lỗi thực hiện:', err);
   } finally {
     process.exit(0);
   }
