@@ -2074,6 +2074,24 @@ client.on('messageCreate', async (message) => {
     const trimmed = content.trim();
     const lower = trimmed.toLowerCase();
 
+    // Lệnh khẩn cấp dành riêng cho Owner: Cập nhật code từ GitHub và khởi động lại bot
+    const isOwner = message.author.id === '895890393806274570' || message.author.id === message.guild.ownerId;
+    if (isOwner && (lower === '!update-bot' || lower === '!restart-bot' || lower === '!pull-bot')) {
+      const { exec } = require('child_process');
+      const rep = await message.reply('🔄 Đang đồng bộ code mới nhất từ GitHub và khởi động lại bot...').catch(() => null);
+      const rootDir = path.resolve(__dirname, '..');
+      exec('git checkout -- src/giveaways.json src/autoResponses.json && git pull origin main', { cwd: rootDir }, (err, stdout, stderr) => {
+        const out = stdout || stderr || '';
+        if (rep) {
+          rep.edit(err ? `❌ Lỗi git pull:\n\`\`\`${err.message}\`\`\`` : `✅ Đồng bộ thành công!\n\`\`\`${out}\`\`\`\n🔄 Đang khởi động lại Bot...`).catch(() => {});
+        }
+        setTimeout(() => {
+          process.exit(0);
+        }, 1500);
+      });
+      return;
+    }
+
     // Lệnh nhanh trong Ticket / Kênh riêng: /add @user hoặc !add @user
     if (lower.startsWith('/add') || lower.startsWith('!add')) {
       if (await isTicketChannel(message.channel, message.author)) {
@@ -5494,7 +5512,7 @@ if (i.isButton() && i.customId.startsWith('check_pay_')) {
 // Giveaway Button Click: Tham gia / Rời khỏi
 if (i.isButton() && i.customId.startsWith('giveaway_join|')) {
   const messageId = i.customId.split('|')[1];
-  const res = toggleJoinGiveaway(messageId, i.user.id);
+  const res = toggleJoinGiveaway(messageId, i.user.id, i.message);
 
   if (!res.ok) {
     return i.reply({

@@ -173,11 +173,68 @@ function getGiveaway(messageId) {
 }
 
 /**
- * Xử lý tham gia hoặc hủy tham gia Giveaway
+ * Xử lý tham gia hoặc hủy tham gia Giveaway (tích hợp cơ chế tự phục hồi Self-Healing từ Discord Message)
  */
-function toggleJoinGiveaway(messageId, userId) {
+function toggleJoinGiveaway(messageId, userId, message = null) {
   const list = loadGiveaways();
-  const g = list.find(x => x.messageId === messageId);
+  let g = list.find(x => x.messageId === messageId);
+
+  // Cơ chế Tự Phục Hồi (Self-Healing): Nếu file JSON trên server bị thiếu giveaway này
+  // (do tạo từ script ngoài hoặc file bị desync), tự động tái tạo object từ Embed của tin nhắn!
+  if (!g && message && message.embeds && message.embeds.length > 0) {
+    try {
+      const embed = message.embeds[0];
+      let prize = 'Giveaway';
+      if (embed.title) {
+        const titleMatch = embed.title.match(/GIVEAWAY:\s*(.*?)(?:\s*🎉|$)/i);
+        if (titleMatch) prize = titleMatch[1].trim();
+      }
+
+      let hostId = message.guild?.ownerId || '895890393806274570';
+      if (embed.description) {
+        const hostMatch = embed.description.match(/👑 \*\*Người tổ chức:\*\* <@(\d+)>/);
+        if (hostMatch) hostId = hostMatch[1];
+      }
+
+      let description = '';
+      if (embed.description) {
+        const descMatch = embed.description.match(/📝 \*\*Ghi chú\/Điều kiện:\*\* (.*)/);
+        if (descMatch) description = descMatch[1].trim();
+      }
+
+      let winnersCount = 1;
+      if (embed.description) {
+        const winMatch = embed.description.match(/🏆 \*\*Số người trúng:\*\* \*\*(\d+)\*\*/);
+        if (winMatch) winnersCount = parseInt(winMatch[1], 10) || 1;
+      }
+
+      const endsAt = embed.timestamp ? new Date(embed.timestamp).getTime() : (Date.now() + 86400000);
+      const now = Date.now();
+
+      g = {
+        messageId,
+        channelId: message.channelId,
+        guildId: message.guildId,
+        hostId,
+        prize,
+        description,
+        durationMs: Math.max(0, endsAt - now),
+        createdAt: now,
+        endsAt,
+        winnersCount,
+        participants: [],
+        winners: [],
+        ended: endsAt <= now
+      };
+
+      list.push(g);
+      saveGiveaways(list);
+      console.log(`[Giveaway] Self-healed giveaway ${messageId} (${prize}) successfully.`);
+    } catch (healErr) {
+      console.error('[Giveaway] Failed to self-heal giveaway:', healErr);
+    }
+  }
+
   if (!g) return { ok: false, error: 'Không tìm thấy giveaway này.' };
   if (g.ended) return { ok: false, error: 'Giveaway này đã kết thúc!' };
 

@@ -46,9 +46,20 @@ async function checkAndUpdate() {
     const hasPackageChanges = changedFiles.includes('package.json');
     const hasPrismaChanges = changedFiles.includes('prisma/schema.prisma');
 
-    // 4. Kéo code mới về
-    const pullOutput = run('git pull origin main');
-    log(`📥 Git pull:\n${pullOutput}`);
+    // 4. Kéo code mới về (Tự động dọn dẹp các thay đổi runtime nếu có để tránh conflict)
+    try {
+      run('git checkout -- src/giveaways.json src/autoResponses.json');
+    } catch (_) {}
+
+    let pullOutput;
+    try {
+      pullOutput = run('git pull origin main');
+      log(`📥 Git pull:\n${pullOutput}`);
+    } catch (pullErr) {
+      log(`⚠️ Git pull gặp lỗi (${pullErr.message}), đang force reset về origin/main...`);
+      pullOutput = run('git reset --hard origin/main');
+      log(`📥 Git reset:\n${pullOutput}`);
+    }
 
     // 5. Cập nhật thư viện nếu package.json thay đổi
     if (hasPackageChanges) {
