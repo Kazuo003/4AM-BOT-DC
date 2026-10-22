@@ -253,6 +253,20 @@ const commands = [
       opt.setName('user')
         .setDescription('Khách hàng cần thanh toán (tùy chọn để tag khách)')
         .setRequired(false))
+,
+
+  // Staff/Customer: Gửi lời mời đánh giá Feedback mà không đóng ticket
+  new SlashCommandBuilder()
+    .setName('feedback')
+    .setDescription('Gửi lời mời đánh giá & Feedback cho khách hàng (không đóng/xóa ticket)')
+    .addStringOption(opt =>
+      opt.setName('service')
+        .setDescription('Tên gói / sản phẩm hoặc dịch vụ (VD: VPS 8GB, 100M OwO, Netflix...)')
+        .setRequired(false))
+    .addUserOption(opt =>
+      opt.setName('customer')
+        .setDescription('Khách hàng cần xin feedback (tùy chọn để tag khách)')
+        .setRequired(false))
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
