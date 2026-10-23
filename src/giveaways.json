@@ -13,5 +13,21 @@
     "participants": [],
     "winners": [],
     "ended": false
+  },
+  {
+    "messageId": "1563228100509044907",
+    "channelId": "1563227100293365981",
+    "guildId": "1369824487524143154",
+    "hostId": "895890393806274570",
+    "prize": "1.000.000 Cow (1M Cow)",
+    "description": "Treo bio: \"owo giá rẻ tại: discord.gg/fouram\" (Lưu ý: Khi trúng giải Staff sẽ check bio, nếu không có sẽ Reroll người khác!)",
+    "durationMs": 86400000,
+    "createdAt": 1792773025596,
+    "endsAt": 1792859425596,
+    "winnersCount": 1,
+    "participants": [],
+    "winners": [],
+    "ended": false,
+    "isDaily": true
   }
 ]

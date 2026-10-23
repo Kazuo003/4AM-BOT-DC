@@ -3,6 +3,10 @@ const path = require('path');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const giveawaysFile = path.resolve(__dirname, 'giveaways.json');
+const DAILY_GIVEAWAY_CHANNEL_ID = process.env.DAILY_GIVEAWAY_CHANNEL_ID || '1563227100293365981';
+const GIVEAWAYS_ROLE_ID = '1428223579316687029';
+let isStartingDaily = false;
+
 
 /**
  * Đọc danh sách Giveaways từ file
@@ -138,7 +142,7 @@ function buildEndedGiveawayEmbed(giveaway) {
 /**
  * Thêm Giveaway mới vào danh sách
  */
-function registerGiveaway({ messageId, channelId, guildId, hostId, prize, description, durationMs, winnersCount }) {
+function registerGiveaway({ messageId, channelId, guildId, hostId, prize, description, durationMs, winnersCount, isDaily = false }) {
   const list = loadGiveaways();
   const now = Date.now();
   const endsAt = now + durationMs;
@@ -156,7 +160,8 @@ function registerGiveaway({ messageId, channelId, guildId, hostId, prize, descri
     winnersCount: winnersCount || 1,
     participants: [],
     winners: [],
-    ended: false
+    ended: false,
+    isDaily: !!isDaily
   };
 
   list.push(giveaway);
@@ -291,10 +296,33 @@ async function endGiveaway(client, messageId, manual = false) {
         // Gửi thông báo chúc mừng
         if (winners.length > 0) {
           const mentions = winners.map(id => `<@${id}>`).join(' ');
-          await channel.send({
-            content: `🎊 **CHÚC MỪNG CHIẾN THẮNG!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${g.prize}** tổ chức bởi <@${g.hostId}>!\n👉 Hãy nhắn tin cho người tổ chức hoặc mở Ticket Staff để nhận thưởng nhé!`,
-            reply: { messageReference: g.messageId }
-          }).catch(() => {});
+          if (g.isDaily) {
+            await channel.send({
+              content: `🎊 **CHÚC MỪNG CHIẾN THẮNG DAILY GIVEAWAY!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${g.prize}**!\n👉 **Lưu ý:** Staff sẽ kiểm tra bio (**owo giá rẻ tại: discord.gg/fouram**) trước khi trao giải.\nNếu hợp lệ, hãy mở Ticket Staff để nhận 1M Cow nhé! 🎁`,
+              reply: { messageReference: g.messageId }
+            }).catch(() => {});
+          } else {
+            await channel.send({
+              content: `🎊 **CHÚC MỪNG CHIẾN THẮNG!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${g.prize}** tổ chức bởi <@${g.hostId}>!\n👉 Hãy nhắn tin cho người tổ chức hoặc mở Ticket Staff để nhận thưởng nhé!`,
+              reply: { messageReference: g.messageId }
+            }).catch(() => {});
+          }
+
+          if (g.isDaily) {
+            setTimeout(async () => {
+              try {
+                console.log('[Daily Giveaway] Đang tự động bắt đầu đợt mới cho ngày tiếp theo...');
+                await startDailyGiveaway(client, g.channelId, {
+                  prize: g.prize,
+                  description: g.description,
+                  winnersCount: g.winnersCount,
+                  hostId: g.hostId
+                });
+              } catch (dErr) {
+                console.error('[Daily Giveaway] Lỗi tự động tạo đợt mới:', dErr);
+              }
+            }, 10000);
+          }
         } else {
           await channel.send({
             content: `📢 Giveaway **${g.prize}** đã kết thúc nhưng không có người tham gia hợp lệ!`,
@@ -359,6 +387,78 @@ async function rerollGiveaway(client, messageId, rerollCount = 1) {
   return { ok: true, newWinners };
 }
 
+
+/**
+ * Tự động tạo một đợt Daily Giveaway 1M Cow kéo dài 24 tiếng
+ */
+async function startDailyGiveaway(client, channelId = DAILY_GIVEAWAY_CHANNEL_ID, customConfig = {}) {
+  if (isStartingDaily) return null;
+  isStartingDaily = true;
+  try {
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    if (!channel) {
+      console.warn('[Daily Giveaway] Không tìm thấy kênh:', channelId);
+      return null;
+    }
+
+    const guild = channel.guild;
+    const hostId = customConfig.hostId || guild.ownerId || '895890393806274570';
+    const durationMs = customConfig.durationMs || 24 * 60 * 60 * 1000; // 24 giờ
+    const endsAt = Date.now() + durationMs;
+    const prize = customConfig.prize || '1.000.000 Cow (1M Cow)';
+    const description = customConfig.description || 'Treo bio: "owo giá rẻ tại: discord.gg/fouram" (Lưu ý: Khi trúng giải Staff sẽ check bio, nếu không có sẽ Reroll người khác!)';
+    const winnersCount = customConfig.winnersCount || 1;
+
+    const dummy = {
+      messageId: 'temp',
+      channelId,
+      guildId: guild.id,
+      hostId,
+      prize,
+      description,
+      durationMs,
+      endsAt,
+      winnersCount,
+      participants: [],
+      isDaily: true
+    };
+
+    const embed = buildActiveGiveawayEmbed(dummy);
+    let row = buildGiveawayActionRow(dummy, false);
+
+    const msg = await channel.send({
+      content: `🎉 **DAILY GIVEAWAY 1.000.000 COW MỖI NGÀY ĐÃ BẮT ĐẦU!** 🎉 <@&${GIVEAWAYS_ROLE_ID}>`,
+      embeds: [embed],
+      components: [row],
+      allowedMentions: { roles: [GIVEAWAYS_ROLE_ID] }
+    });
+
+    dummy.messageId = msg.id;
+    row = buildGiveawayActionRow(dummy, false);
+    await msg.edit({ components: [row] }).catch(() => {});
+
+    const registered = registerGiveaway({
+      messageId: msg.id,
+      channelId,
+      guildId: guild.id,
+      hostId,
+      prize,
+      description,
+      durationMs,
+      winnersCount,
+      isDaily: true
+    });
+
+    console.log(`[Daily Giveaway] Đã tạo thành công Giveaway hàng ngày: ${msg.id}`);
+    return registered;
+  } catch (err) {
+    console.error('[Daily Giveaway] Lỗi khi tạo:', err);
+    return null;
+  } finally {
+    isStartingDaily = false;
+  }
+}
+
 /**
  * Khởi động scheduler quét giveaway hết hạn định kỳ
  */
@@ -371,6 +471,15 @@ function initGiveawayScheduler(client) {
 
       for (const g of toEnd) {
         await endGiveaway(client, g.messageId);
+      }
+
+      // Tự động kiểm tra: Nếu kênh Daily Giveaway chưa có đợt nào đang chạy thì khởi động
+      if (client.isReady()) {
+        const hasActiveDaily = list.some(x => !x.ended && x.channelId === DAILY_GIVEAWAY_CHANNEL_ID && x.endsAt > now);
+        if (!hasActiveDaily) {
+          console.log('[Daily Giveaway Scheduler] Chưa có đợt Daily Giveaway nào đang chạy -> Tự động khởi tạo...');
+          await startDailyGiveaway(client, DAILY_GIVEAWAY_CHANNEL_ID);
+        }
       }
     } catch (err) {
       console.error('Lỗi trong Giveaway Scheduler:', err);
@@ -390,5 +499,6 @@ module.exports = {
   toggleJoinGiveaway,
   endGiveaway,
   rerollGiveaway,
-  initGiveawayScheduler
+  initGiveawayScheduler,
+  startDailyGiveaway
 };
