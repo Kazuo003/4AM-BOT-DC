@@ -1515,6 +1515,15 @@ async function isStaffMember(i) {
   if (!userId) return false;
   if (i.guild.ownerId && i.guild.ownerId === userId) return true;
 
+  // 1. Kiểm tra nhanh Permissions từ payload interaction (0ms)
+  if (i.memberPermissions) {
+    if (i.memberPermissions.has(PermissionsBitField.Flags.Administrator) ||
+        i.memberPermissions.has(PermissionsBitField.Flags.ManageChannels) ||
+        i.memberPermissions.has(PermissionsBitField.Flags.ManageGuild)) {
+      return true;
+    }
+  }
+
   let staffRoleId = process.env.STAFF_ROLE_ID;
   if (!staffRoleId && typeof getMenuData === 'function') {
     try {
@@ -1524,50 +1533,50 @@ async function isStaffMember(i) {
   }
   if (!staffRoleId) staffRoleId = '1472036681048658041';
 
-  try {
-    const member = (i.member && i.member.roles) ? i.member : await i.guild.members.fetch(userId).catch(() => null);
-    if (!member) return false;
-
-    // Permissions: Administrator, ManageChannels, ManageGuild
-    if (member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-        member.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
-        member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-      return true;
-    }
-
-    // Direct staff role
-    if (staffRoleId && member.roles.cache.has(staffRoleId)) {
-      return true;
-    }
-
-    // Role hierarchy: check if member has any role >= staff role in position
-    if (staffRoleId) {
-      let staffRole = i.guild.roles.cache.get(staffRoleId);
-      if (!staffRole) {
-        staffRole = await i.guild.roles.fetch(staffRoleId).catch(() => null);
+  // 2. Kiểm tra nhanh role của member từ cache in-memory mà KHÔNG cần gọi API fetch
+  const rawMember = i.member;
+  if (rawMember) {
+    if (rawMember.permissions && typeof rawMember.permissions.has === 'function') {
+      if (rawMember.permissions.has(PermissionsBitField.Flags.Administrator) ||
+          rawMember.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
+          rawMember.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+        return true;
       }
-      if (staffRole && staffRole.position > 0 && member.roles.highest && member.roles.highest.id !== i.guild.id) {
+    }
+    if (rawMember.roles) {
+      if (rawMember.roles.cache && typeof rawMember.roles.cache.has === 'function') {
+        if (staffRoleId && rawMember.roles.cache.has(staffRoleId)) return true;
+      } else if (Array.isArray(rawMember.roles)) {
+        if (staffRoleId && rawMember.roles.includes(staffRoleId)) return true;
+      }
+    }
+  }
+
+  // 3. Registered seller check (in-memory)
+  if (typeof getMenuData === 'function') {
+    try {
+      const mData = getMenuData();
+      const sellers = mData?.sellers || {};
+      if (Object.values(sellers).some(s => s && s.discordId === userId)) {
+        return true;
+      }
+    } catch (_) {}
+  }
+
+  // 4. Role hierarchy check an toàn chỉ dùng cache
+  try {
+    const member = (rawMember && rawMember.roles) ? rawMember : i.guild.members.cache.get(userId);
+    if (member && staffRoleId) {
+      const staffRole = i.guild.roles.cache.get(staffRoleId);
+      if (staffRole && staffRole.position > 0 && member.roles?.highest && member.roles.highest.id !== i.guild.id) {
         if (member.roles.highest.position >= staffRole.position) {
           return true;
         }
       }
     }
+  } catch (_) {}
 
-    // Registered seller check
-    if (typeof getMenuData === 'function') {
-      try {
-        const mData = getMenuData();
-        const sellers = mData?.sellers || {};
-        if (Object.values(sellers).some(s => s && s.discordId === userId)) {
-          return true;
-        }
-      } catch (_) {}
-    }
-
-    return false;
-  } catch (_) {
-    return false;
-  }
+  return false;
 }
 
 // Utility: check if user is staff or assigned seller for ticket
@@ -2746,7 +2755,7 @@ client.on('interactionCreate', async (i) => {
       return i.reply({
         content: '❌ Bạn là **Staff / Quản trị viên**, nút này chỉ dành cho khách hàng cần hỗ trợ!',
         ephemeral: true
-      });
+      }).catch(() => {});
     }
 
     // Cooldown 60s giữa các lần gọi Staff của khách hàng để chống spam
@@ -2758,14 +2767,22 @@ client.on('interactionCreate', async (i) => {
       return i.reply({
         content: `⏳ Bạn vừa bấm gọi Staff rồi! Vui lòng đợi trong giây lát hoặc thử lại sau **${waitSec} giây**.`,
         ephemeral: true
-      });
+      }).catch(() => {});
     }
     lastStaffCallAt.set(callKey, now);
 
-    await i.reply({
-      content: `🔔 <@&${staffRoleId}> các bạn nhân viên ơi hỗ trợ mình với!`,
-      allowedMentions: { roles: [staffRoleId], users: [i.user.id] }
-    });
+    try {
+      await i.reply({
+        content: `🔔 <@&${staffRoleId}> các bạn nhân viên ơi hỗ trợ mình với! (Khách hàng <@${i.user.id}> vừa gọi)`,
+        allowedMentions: { roles: [staffRoleId], users: [i.user.id] }
+      });
+    } catch (callErr) {
+      console.warn('[ping_staff_ticket] i.reply failed, fallback to channel.send:', callErr?.message);
+      await i.channel.send({
+        content: `🔔 <@&${staffRoleId}> các bạn nhân viên ơi hỗ trợ mình với! (Khách hàng <@${i.user.id}> vừa gọi)`,
+        allowedMentions: { roles: [staffRoleId], users: [i.user.id] }
+      }).catch(() => {});
+    }
     return;
   }
 
@@ -4585,6 +4602,9 @@ client.on('interactionCreate', async (i) => {
     i.customId.startsWith('customer_confirm_close|') ||
     i.customId.startsWith('resolve_just_close|')
   )) {
+    // Ack ngay lập tức (<50ms) để Discord không bao giờ báo "didn't respond in time"
+    await i.deferReply().catch(() => {});
+
     // Hủy timer tự động đóng nếu đang chạy trên channel này
     if (autoCloseTimers.has(i.channel.id)) {
       clearTimeout(autoCloseTimers.get(i.channel.id).timer);
@@ -4621,10 +4641,16 @@ client.on('interactionCreate', async (i) => {
       const isStaff = await canManageTicket(i, order);
       const isCustomer = order.user?.discordId === i.user.id;
       if (!isStaff && !isCustomer) {
-        return i.reply({
-          content: '⚠️ Chỉ người tạo ticket hoặc Nhân viên (Staff) mới có quyền đóng ticket này!',
-          ephemeral: true
-        });
+        if (i.deferred) {
+          return i.editReply({
+            content: '⚠️ Chỉ người tạo ticket hoặc Nhân viên (Staff) mới có quyền đóng ticket này!'
+          }).catch(() => {});
+        } else {
+          return i.reply({
+            content: '⚠️ Chỉ người tạo ticket hoặc Nhân viên (Staff) mới có quyền đóng ticket này!',
+            ephemeral: true
+          }).catch(() => {});
+        }
       }
 
       // If support ticket: mark COMPLETED
@@ -4712,7 +4738,15 @@ client.on('interactionCreate', async (i) => {
       closeComponents = [new ActionRowBuilder().addComponents(instantBtn)];
     }
 
-    await i.reply({ embeds: [closeEmbed], components: closeComponents });
+    if (i.deferred) {
+      await i.editReply({ embeds: [closeEmbed], components: closeComponents }).catch(async () => {
+        await i.channel.send({ embeds: [closeEmbed], components: closeComponents }).catch(() => {});
+      });
+    } else {
+      await i.reply({ embeds: [closeEmbed], components: closeComponents }).catch(async () => {
+        await i.channel.send({ embeds: [closeEmbed], components: closeComponents }).catch(() => {});
+      });
+    }
 
     const delayMs = 20000;
     if (autoCloseTimers.has(i.channel.id)) {
