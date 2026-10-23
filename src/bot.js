@@ -4584,12 +4584,13 @@ client.on('interactionCreate', async (i) => {
   }
 
   // --- Nút Đóng Ngay (Xóa kênh lập tức không cần chờ đếm ngược 20s) ---
-  if (i.isButton() && (i.customId === 'instant_delete_ticket' || i.customId.startsWith('instant_delete_ticket|') || i.customId.startsWith('close_simple_ticket'))) {
+  if (i.isButton() && (i.customId === 'instant_delete_ticket' || i.customId.startsWith('instant_delete_ticket|'))) {
     if (autoCloseTimers.has(i.channel.id)) {
       clearTimeout(autoCloseTimers.get(i.channel.id).timer);
       autoCloseTimers.delete(i.channel.id);
     }
-    await i.reply({ content: '⚡ Đang đóng và xóa kênh ngay lập tức...', ephemeral: true }).catch(() => {});
+    await i.deferReply({ ephemeral: true }).catch(() => {});
+    await i.editReply({ content: '⚡ Đang đóng và xóa kênh ngay lập tức...' }).catch(() => {});
     return i.channel.delete().catch(e => console.error('Không thể xóa kênh ticket ngay lập tức:', e));
   }
 
