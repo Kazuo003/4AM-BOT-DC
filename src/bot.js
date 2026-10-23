@@ -2039,68 +2039,74 @@ async function handleQuickBill(channel, actor, { amountStr, note = '', targetUse
 }
 
 async function handleSendFeedbackPrompt(channel, actor, { service = '', targetUser = null } = {}) {
-  const isTicket = await isTicketChannel(channel, actor);
-  if (!isTicket) {
-    return { ok: false, error: '⚠️ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket hoặc kênh riêng của khách hàng!' };
+  try {
+    const isTicket = await isTicketChannel(channel, actor);
+    if (!isTicket) {
+      return { ok: false, error: '⚠️ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket hoặc kênh riêng của khách hàng!' };
+    }
+
+    // Tìm thông tin ticket và order nếu có trong database
+    const ticket = await prisma.ticket.findFirst({
+      where: { channelId: channel.id },
+      include: { order: { include: { user: true, product: true } } }
+    }).catch(() => null);
+
+    let orderNo = ticket?.order?.orderNo || '';
+    let resolvedService = (service || '').trim();
+
+    if (!resolvedService && ticket?.order) {
+      let snap = {};
+      try { snap = JSON.parse(ticket.order.planSnapshotJson || '{}'); } catch (_) {}
+      resolvedService = snap.categoryLabel || ticket.order.product?.name || snap.selectedItem || '';
+    }
+    if (!resolvedService) {
+      resolvedService = 'Dịch vụ tại 4AM STORE';
+    }
+
+    // Khách hàng mục tiêu
+    let customerDiscordId = targetUser?.id || ticket?.order?.user?.discordId || null;
+    let customerMention = customerDiscordId ? `<@${customerDiscordId}>` : '';
+
+    const storeName = getMenuData().storeName || '4AM STORE';
+    const logoUrl = getMenuData().logoUrl || undefined;
+
+    const embed = new EmbedBuilder()
+      .setTitle('⭐ ĐÁNH GIÁ DỊCH VỤ & GỬI FEEDBACK')
+      .setColor(0xF59E0B)
+      .setDescription([
+        customerMention ? `Chào ${customerMention}! Cảm ơn bạn đã luôn tin tưởng và đồng hành cùng **${storeName}**! 💖` : `Cảm ơn quý khách đã tin tưởng và đồng hành cùng **${storeName}**! 💖`,
+        '',
+        `📦 **Dịch vụ / Gói:** **${resolvedService}**`,
+        '',
+        '✨ Để shop không ngừng nâng cao chất lượng phục vụ, xin mời bạn bấm nút bên dưới để gửi số sao (1-5 ⭐) và lời nhận xét nhé!',
+        '',
+        '🔒 *Lưu ý: Đánh giá này sẽ được đăng lên kênh Feedback mà **KHÔNG đóng hay xóa kênh ticket** này (bạn và Shop vẫn tiếp tục trao đổi bình thường).*'
+      ].join('\n'))
+      .setFooter({ text: `${storeName} • Khách hàng là ưu tiên số 1`, iconURL: logoUrl })
+      .setTimestamp();
+
+    // Giới hạn độ dài để không bao giờ vượt quá 100 ký tự customId của Discord
+    const safeServiceParam = Buffer.from(resolvedService.slice(0, 30)).toString('base64url');
+    const safeOrderNo = (orderNo || 'VIP').slice(0, 20);
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`rate_order_keep|${safeOrderNo}|${safeServiceParam}`)
+        .setLabel('⭐ Gửi Đánh Giá & Feedback')
+        .setStyle(ButtonStyle.Success)
+    );
+
+    await channel.send({
+      content: customerMention ? `🔔 ${customerMention} bạn ơi, dành chút thời gian gửi feedback giúp shop nhé!` : undefined,
+      embeds: [embed],
+      components: [row]
+    });
+
+    return { ok: true, service: resolvedService, customerId: customerDiscordId };
+  } catch (err) {
+    console.error('[handleSendFeedbackPrompt Error]', err);
+    return { ok: false, error: `❌ Đã xảy ra lỗi khi tạo bảng feedback: ${err.message}` };
   }
-
-  // Tìm thông tin ticket và order nếu có trong database
-  const ticket = await prisma.ticket.findFirst({
-    where: { channelId: channel.id },
-    include: { order: { include: { user: true, product: true } } }
-  }).catch(() => null);
-
-  let orderNo = ticket?.order?.orderNo || '';
-  let resolvedService = (service || '').trim();
-
-  if (!resolvedService && ticket?.order) {
-    let snap = {};
-    try { snap = JSON.parse(ticket.order.planSnapshotJson || '{}'); } catch (_) {}
-    resolvedService = snap.categoryLabel || ticket.order.product?.name || snap.selectedItem || '';
-  }
-  if (!resolvedService) {
-    resolvedService = 'Dịch vụ tại 4AM STORE';
-  }
-
-  // Khách hàng mục tiêu
-  let customerDiscordId = targetUser?.id || ticket?.order?.user?.discordId || null;
-  let customerMention = customerDiscordId ? `<@${customerDiscordId}>` : '';
-
-  const storeName = getMenuData().storeName || '4AM STORE';
-  const logoUrl = getMenuData().logoUrl || undefined;
-
-  const embed = new EmbedBuilder()
-    .setTitle('⭐ ĐÁNH GIÁ DỊCH VỤ & GỬI FEEDBACK')
-    .setColor(0xF59E0B)
-    .setDescription([
-      customerMention ? `Chào ${customerMention}! Cảm ơn bạn đã luôn tin tưởng và đồng hành cùng **${storeName}**! 💖` : `Cảm ơn quý khách đã tin tưởng và đồng hành cùng **${storeName}**! 💖`,
-      '',
-      `📦 **Dịch vụ / Gói:** **${resolvedService}**`,
-      '',
-      '✨ Để shop không ngừng nâng cao chất lượng phục vụ, xin mời bạn bấm nút bên dưới để gửi số sao (1-5 ⭐) và lời nhận xét nhé!',
-      '',
-      '🔒 *Lưu ý: Đánh giá này sẽ được đăng lên kênh Feedback mà **KHÔNG đóng hay xóa kênh ticket** này (bạn và Shop vẫn tiếp tục trao đổi bình thường).*'
-    ].join('\n'))
-    .setFooter({ text: `${storeName} • Khách hàng là ưu tiên số 1`, iconURL: logoUrl })
-    .setTimestamp();
-
-  const safeServiceParam = Buffer.from(resolvedService).toString('base64url');
-  const safeOrderNo = orderNo || 'VIP';
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`rate_order_keep|${safeOrderNo}|${safeServiceParam}`)
-      .setLabel('⭐ Gửi Đánh Giá & Feedback')
-      .setStyle(ButtonStyle.Success)
-  );
-
-  await channel.send({
-    content: customerMention ? `🔔 ${customerMention} bạn ơi, dành chút thời gian gửi feedback giúp shop nhé!` : undefined,
-    embeds: [embed],
-    components: [row]
-  });
-
-  return { ok: true, service: resolvedService, customerId: customerDiscordId };
 }
 
 client.once('ready', async () => {
@@ -5572,7 +5578,8 @@ if (i.isChatInputCommand() && i.commandName === 'bill') {
   if (!res.ok) {
     return i.editReply({ content: res.error });
   }
-  return i.editReply({ content: `✅ Đã tạo hóa đơn **#${res.orderNo}
+  return i.editReply({ content: `✅ Đã tạo hóa đơn **#${res.orderNo}** (${formatPrice(res.amount, 'VNĐ')}) thành công!` });
+}
 
 // ==========================================
 // LỆNH GỬI ĐÁNH GIÁ FEEDBACK KHÔNG ĐÓNG TICKET (/feedback)
@@ -5582,12 +5589,16 @@ if (i.isChatInputCommand() && i.commandName === 'feedback') {
   const service = i.options.getString('service') || '';
   const targetUser = i.options.getUser('customer') || null;
 
-  const res = await handleSendFeedbackPrompt(i.channel, i.user, { service, targetUser });
-  if (!res.ok) {
-    return i.editReply({ content: res.error });
+  try {
+    const res = await handleSendFeedbackPrompt(i.channel, i.user, { service, targetUser });
+    if (!res.ok) {
+      return i.editReply({ content: res.error });
+    }
+    return i.editReply({ content: '✅ Đã gửi bảng đánh giá dịch vụ & Feedback vào kênh thành công (kênh ticket sẽ được giữ nguyên, không bị đóng).' });
+  } catch (fbErr) {
+    console.error('[Feedback Command Error]', fbErr);
+    return i.editReply({ content: `❌ Có lỗi xảy ra khi gửi bảng Feedback: ${fbErr.message}` });
   }
-  return i.editReply({ content: '✅ Đã gửi bảng đánh giá dịch vụ & Feedback vào kênh thành công (kênh ticket sẽ được giữ nguyên, không bị đóng).' });
-}** (${formatPrice(res.amount, 'VNĐ')}) thành công!` });
 }
 
 // Button kiểm tra thanh toán hóa đơn nhanh
