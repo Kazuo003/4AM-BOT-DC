@@ -69,6 +69,33 @@ const {
 } = require('./translator');
 const ticketTargetLangMap = new Map();
 const ticketTranslateDisabledSet = new Set();
+const TICKET_LANG_FILE = path.resolve(__dirname, 'ticketLanguages.json');
+
+function loadTicketLanguages() {
+  try {
+    if (fs.existsSync(TICKET_LANG_FILE)) {
+      const raw = fs.readFileSync(TICKET_LANG_FILE, 'utf8');
+      const data = JSON.parse(raw);
+      if (data && typeof data === 'object') {
+        for (const [k, v] of Object.entries(data)) {
+          if (v) ticketTargetLangMap.set(k, v);
+        }
+      }
+    }
+  } catch (_) {}
+}
+
+function saveTicketLanguages() {
+  try {
+    const obj = {};
+    for (const [k, v] of ticketTargetLangMap.entries()) {
+      obj[k] = v;
+    }
+    fs.writeFileSync(TICKET_LANG_FILE, JSON.stringify(obj, null, 2), 'utf8');
+  } catch (_) {}
+}
+
+loadTicketLanguages();
 
 const client = new Client({
   intents: [
@@ -1620,8 +1647,20 @@ async function isStaffMember(i) {
   if (i.memberPermissions) {
     if (i.memberPermissions.has(PermissionsBitField.Flags.Administrator) ||
         i.memberPermissions.has(PermissionsBitField.Flags.ManageChannels) ||
-        i.memberPermissions.has(PermissionsBitField.Flags.ManageGuild)) {
+        i.memberPermissions.has(PermissionsBitField.Flags.ManageGuild) ||
+        i.memberPermissions.has(PermissionsBitField.Flags.ManageMessages)) {
       return true;
+    }
+  }
+
+  // 2. Lấy GuildMember object an toàn (hỗ trợ cả Interaction, Message hoặc Object { guild, user })
+  let rawMember = i.member;
+  if (!rawMember && i.guild.members) {
+    rawMember = i.guild.members.cache.get(userId);
+    if (!rawMember && typeof i.guild.members.fetch === 'function') {
+      try {
+        rawMember = await i.guild.members.fetch(userId).catch(() => null);
+      } catch (_) {}
     }
   }
 
@@ -1634,26 +1673,32 @@ async function isStaffMember(i) {
   }
   if (!staffRoleId) staffRoleId = '1472036681048658041';
 
-  // 2. Kiểm tra nhanh role của member từ cache in-memory mà KHÔNG cần gọi API fetch
-  const rawMember = i.member;
+  // 3. Kiểm tra member permissions và roles
   if (rawMember) {
     if (rawMember.permissions && typeof rawMember.permissions.has === 'function') {
       if (rawMember.permissions.has(PermissionsBitField.Flags.Administrator) ||
           rawMember.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
-          rawMember.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+          rawMember.permissions.has(PermissionsBitField.Flags.ManageGuild) ||
+          rawMember.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
         return true;
       }
     }
     if (rawMember.roles) {
       if (rawMember.roles.cache && typeof rawMember.roles.cache.has === 'function') {
         if (staffRoleId && rawMember.roles.cache.has(staffRoleId)) return true;
+        // Kiểm tra role Staff/Admin/Mod/Seller phổ biến
+        const hasStaffRoleName = rawMember.roles.cache.some(r => {
+          const n = (r.name || '').toLowerCase();
+          return n.includes('staff') || n.includes('admin') || n.includes('mod') || n.includes('seller') || n.includes('hỗ trợ') || n.includes('quản lý');
+        });
+        if (hasStaffRoleName) return true;
       } else if (Array.isArray(rawMember.roles)) {
         if (staffRoleId && rawMember.roles.includes(staffRoleId)) return true;
       }
     }
   }
 
-  // 3. Registered seller check (in-memory)
+  // 4. Registered seller check (in-memory)
   if (typeof getMenuData === 'function') {
     try {
       const mData = getMenuData();
@@ -1664,7 +1709,7 @@ async function isStaffMember(i) {
     } catch (_) {}
   }
 
-  // 4. Role hierarchy check an toàn chỉ dùng cache
+  // 5. Role hierarchy check an toàn chỉ dùng cache
   try {
     const member = (rawMember && rawMember.roles) ? rawMember : i.guild.members.cache.get(userId);
     if (member && staffRoleId) {
@@ -2391,8 +2436,8 @@ client.on('messageCreate', async (message) => {
     const trimmed = content.trim();
     const lower = trimmed.toLowerCase();
 
-    // Lệnh khẩn cấp dành riêng cho Owner: Cập nhật code từ GitHub và khởi động lại bot
-    const isOwner = message.author.id === '895890393806274570' || message.author.id === message.guild.ownerId;
+    // Lệnh khẩn cấp dành cho Staff / Admin / Owner: Cập nhật code từ GitHub và khởi động lại bot
+    const isOwner = message.author.id === '895890393806274570' || message.author.id === message.guild.ownerId || (await isStaffMember(message));
     if (isOwner && (lower === '!update-bot' || lower === '!restart-bot' || lower === '!pull-bot')) {
       const { exec } = require('child_process');
       const rep = await message.reply('🔄 Đang đồng bộ code mới nhất từ GitHub và khởi động lại bot...').catch(() => null);
@@ -2411,7 +2456,7 @@ client.on('messageCreate', async (message) => {
 
     // Lệnh cài đặt nhanh GROQ_API_KEY cho Staff / Admin (Tự động xóa tin nhắn để bảo mật)
     if (lower.startsWith('!setgroq ')) {
-      const isStaff = await isStaffMember({ guild: message.guild, user: message.author });
+      const isStaff = await isStaffMember(message);
       if (!isStaff) return;
       const key = trimmed.split(/\s+/)[1];
       if (key && key.startsWith('gsk_')) {
@@ -2433,7 +2478,7 @@ client.on('messageCreate', async (message) => {
 
     // Lệnh đồng bộ lại bảng giá Menu: !syncmenu, !dongbomenu
     if (lower === '!syncmenu' || lower === '!dongbomenu') {
-      const isStaff = await isStaffMember({ guild: message.guild, user: message.author });
+      const isStaff = await isStaffMember(message);
       if (!isStaff) {
         return message.reply('❌ Lệnh này chỉ dành cho Staff / Quản trị viên!').catch(() => {});
       }
@@ -2447,7 +2492,7 @@ client.on('messageCreate', async (message) => {
     }
 
     // ------------------------------------------
-    // TỰ ĐỘNG DỊCH HAI CHIỀU TRONG TICKET QUỐC TẾ
+    // TỰ ĐỘNG DỊCH HAI CHIỀU TRONG TICKET
     // ------------------------------------------
     if (await isTicketChannel(message.channel, message.author)) {
       const chName = (message.channel.name || '').toLowerCase();
@@ -2463,12 +2508,15 @@ client.on('messageCreate', async (message) => {
       if (lower === '!tr on' || lower === '!translate on') {
         ticketTranslateDisabledSet.delete(message.channel.id);
         if (!ticketTargetLangMap.has(message.channel.id)) ticketTargetLangMap.set(message.channel.id, 'en');
+        saveTicketLanguages();
         await message.reply('🌐 **Tự động dịch hai chiều: ĐÃ BẬT.**\n• Khách nhắn ngoại ngữ ➔ Bot dịch sang tiếng Việt cho Staff.\n• Staff nhắn tiếng Việt ➔ Bot dịch sang tiếng Anh cho khách.').catch(() => {});
         return;
       }
 
       if (lower === '!tr off' || lower === '!translate off') {
         ticketTranslateDisabledSet.add(message.channel.id);
+        ticketTargetLangMap.delete(message.channel.id);
+        saveTicketLanguages();
         await message.reply('🔕 **Tự động dịch: ĐÃ TẮT cho ticket này.**').catch(() => {});
         return;
       }
@@ -2479,6 +2527,7 @@ client.on('messageCreate', async (message) => {
         if (langCode) {
           ticketTranslateDisabledSet.delete(message.channel.id);
           ticketTargetLangMap.set(message.channel.id, langCode);
+          saveTicketLanguages();
           await message.reply(`🌐 **Ngôn ngữ mục tiêu của Ticket đã đổi thành:** \`${langCode.toUpperCase()}\`.\n• Bot sẽ tự động dịch hai chiều giữa Tiếng Việt và ${langCode.toUpperCase()}.\n• Gõ \`!langs\` nếu muốn xem lại danh sách mã ngôn ngữ khác.`).catch(() => {});
           return;
         } else {
@@ -2488,32 +2537,44 @@ client.on('messageCreate', async (message) => {
       }
 
       // Tự động dịch hai chiều
-      if (isEnTicket && !isTranslateDisabled) {
+      if (!isTranslateDisabled) {
         const isCommand = trimmed.startsWith('!') || trimmed.startsWith('/') || trimmed.startsWith('4am') || trimmed.startsWith('tos') || trimmed.startsWith('stk');
         const hasLetters = /[a-zA-ZÀ-ỹ]/.test(trimmed);
         const isUrl = /^https?:\/\//i.test(trimmed);
         const isIdPipeSyntax = /^\d{16,20}\s*\|/i.test(trimmed);
 
         if (!isCommand && hasLetters && !isUrl && !isIdPipeSyntax && trimmed.length >= 2) {
-          const targetLang = ticketTargetLangMap.get(message.channel.id) || 'en';
+          const targetLang = ticketTargetLangMap.get(message.channel.id) || (isEnTicket ? 'en' : null);
           const isVN = isProbablyVietnamese(trimmed);
-          const isStaff = await isStaffMember({ guild: message.guild, user: message.author });
 
-          if (isStaff && isVN) {
-            // Staff nhắn tiếng Việt -> Dịch sang ngoại ngữ cho khách
-            const translated = await translateText(trimmed, 'vi', targetLang);
-            if (translated && translated.toLowerCase() !== trimmed.toLowerCase()) {
-              await message.reply({
-                content: `🌐 **[${targetLang.toUpperCase()}]:** *${translated}*`,
-                allowedMentions: { repliedUser: false }
-              }).catch(() => {});
+          if (targetLang) {
+            if (isVN) {
+              // Tin nhắn Tiếng Việt -> Dịch sang ngoại ngữ cho khách
+              const translated = await translateText(trimmed, 'vi', targetLang);
+              if (translated && translated.toLowerCase() !== trimmed.toLowerCase()) {
+                await message.reply({
+                  content: `🌐 **[${targetLang.toUpperCase()}]:** *${translated}*`,
+                  allowedMentions: { repliedUser: false }
+                }).catch(() => {});
+              }
+            } else {
+              // Tin nhắn Ngoại ngữ -> Dịch sang Tiếng Việt cho Staff
+              const translated = await translateText(trimmed, 'auto', 'vi');
+              if (translated && translated.toLowerCase() !== trimmed.toLowerCase()) {
+                await message.reply({
+                  content: `🇻🇳 **[Dịch]:** *${translated}*`,
+                  allowedMentions: { repliedUser: false }
+                }).catch(() => {});
+              }
             }
-          } else if (!isStaff && !isVN) {
-            // Khách nhắn ngoại ngữ -> Dịch sang tiếng Việt cho Staff
+          } else if (!isVN && trimmed.length >= 8) {
+            // Khách nhắn ngoại ngữ trong Ticket bình thường -> Tự động bật dịch hai chiều
             const translated = await translateText(trimmed, 'auto', 'vi');
             if (translated && translated.toLowerCase() !== trimmed.toLowerCase()) {
+              ticketTargetLangMap.set(message.channel.id, 'en');
+              saveTicketLanguages();
               await message.reply({
-                content: `🇻🇳 **[Dịch]:** *${translated}*`,
+                content: `🇻🇳 **[Dịch]:** *${translated}*\n*(🌐 Đã tự động kích hoạt dịch thuật hai chiều Tiếng Việt ⮂ Tiếng Anh cho ticket này)*`,
                 allowedMentions: { repliedUser: false }
               }).catch(() => {});
             }
@@ -2825,9 +2886,12 @@ client.on('interactionCreate', async (i) => {
     if (isDisabled) {
       ticketTranslateDisabledSet.delete(chId);
       if (!ticketTargetLangMap.has(chId)) ticketTargetLangMap.set(chId, 'en');
+      saveTicketLanguages();
       await i.reply({ content: '🌐 **Đã BẬT tự động dịch hai chiều cho ticket này.** (Staff chat tiếng Việt -> Khách đọc tiếng Anh; Khách chat tiếng nước ngoài -> Staff đọc tiếng Việt)', ephemeral: false }).catch(() => {});
     } else {
       ticketTranslateDisabledSet.add(chId);
+      ticketTargetLangMap.delete(chId);
+      saveTicketLanguages();
       await i.reply({ content: '🔕 **Đã TẮT tự động dịch cho ticket này.**', ephemeral: false }).catch(() => {});
     }
     return;
@@ -3028,6 +3092,7 @@ client.on('interactionCreate', async (i) => {
     const ticketComponents = [itemPrompt.row, ticketActionRow];
     if (isEn) {
       ticketTargetLangMap.set(ticketChannel.id, 'en');
+      saveTicketLanguages();
       const intlRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`toggle_ticket_translate|${ticketChannel.id}`)
@@ -3122,6 +3187,7 @@ client.on('interactionCreate', async (i) => {
 
     if (isEn) {
       ticketTargetLangMap.set(ticketChannel.id, 'en');
+      saveTicketLanguages();
     }
 
     if (!isStaff) markTicketOpened(i.user.id);

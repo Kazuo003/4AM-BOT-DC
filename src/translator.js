@@ -196,11 +196,26 @@ RULES:
  * Dịch thuật bằng AI Groq (Cách 1)
  */
 async function translateWithGroq(text, from = 'auto', to = 'vi') {
-  const apiKey = process.env.GROQ_API_KEY;
+  let apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const envPath = path.resolve(__dirname, '..', '.env');
+      if (fs.existsSync(envPath)) {
+        const envContent = fs.readFileSync(envPath, 'utf8');
+        const match = envContent.match(/GROQ_API_KEY=([^\r\n]+)/);
+        if (match && match[1]) {
+          apiKey = match[1].trim();
+          process.env.GROQ_API_KEY = apiKey;
+        }
+      }
+    } catch (_) {}
+  }
   if (!apiKey) return null;
 
   const targetLangName = LANG_FULL_NAME_MAP[to] || to;
-  const models = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b'];
+  const models = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
 
   for (const model of models) {
     try {
