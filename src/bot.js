@@ -529,9 +529,10 @@ function findBestBandForQuantity(quantity, cat, fallbackIdx = 0) {
 }
 
 // Prompt embed & select menu asking customer which variant/package they want to buy
-function buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, selectedValue = null) {
+function buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, selectedValue = null, isEn = false) {
   const rawItems = cat.items || [];
-  const catName = cat.label || categoryKey || 'Sản phẩm';
+  const enCatLabel = CATEGORY_EN_LABELS[categoryKey] || cat.labelEn || cat.label;
+  const catName = isEn ? (enCatLabel || categoryKey || 'Product') : (cat.label || categoryKey || 'Sản phẩm');
 
   const options = [];
   rawItems.slice(0, 24).forEach((item, index) => {
@@ -540,8 +541,16 @@ function buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, selectedValue =
     let description = '';
     if (raw.includes('|')) {
       const parts = raw.split('|').map(s => s.trim());
-      label = parts[0];
-      description = 'Giá: ' + parts.slice(1).join(' | ');
+      const name = parts[0];
+      const price = parts.slice(1).join(' | ');
+      if (isEn) {
+        const tr = translatePackageItemToEnglish(name, price, 28000);
+        label = tr.name;
+        description = 'Price: ' + tr.price;
+      } else {
+        label = name;
+        description = 'Giá: ' + price;
+      }
     }
 
     let itemEmoji = undefined;
@@ -562,22 +571,23 @@ function buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, selectedValue =
 
   // Always append option: "Cần tư vấn và bàn bạc với người bán"
   options.push({
-    label: 'Cần tư vấn và bàn bạc với người bán',
+    label: isEn ? 'Need consultation / custom order' : 'Cần tư vấn và bàn bạc với người bán',
     value: 'consult_seller',
-    description: 'Trao đổi, tư vấn trực tiếp với nhân viên / người bán',
+    description: isEn ? 'Talk directly with support staff' : 'Trao đổi, tư vấn trực tiếp với nhân viên / người bán',
     emoji: '💬',
     default: selectedValue === 'consult_seller'
   });
 
-  let placeholder = '👉 Bạn muốn mua loại nào? Chọn tại đây...';
+  let placeholder = isEn ? '👉 Which package would you like? Select here...' : '👉 Bạn muốn mua loại nào? Chọn tại đây...';
   if (selectedValue === 'consult_seller') {
-    placeholder = 'Đã chọn: Cần tư vấn và bàn bạc với người bán (Bấm để đổi)';
+    placeholder = isEn ? 'Selected: Need consultation (Click to change)' : 'Đã chọn: Cần tư vấn và bàn bạc với người bán (Bấm để đổi)';
   } else if (selectedValue && selectedValue.startsWith('item_')) {
     const idx = parseInt(selectedValue.replace('item_', ''), 10);
     const chosenRaw = rawItems[idx];
     if (chosenRaw) {
       const pName = String(chosenRaw).split('|')[0].trim().replace(/^•\s*/, '');
-      placeholder = `Đã chọn: ${pName} (Bấm để đổi)`.slice(0, 100);
+      const displayName = isEn ? translatePackageItemToEnglish(pName, '', 28000).name : pName;
+      placeholder = (isEn ? `Selected: ${displayName} (Click to change)` : `Đã chọn: ${pName} (Bấm để đổi)`).slice(0, 100);
     }
   }
 
@@ -589,9 +599,11 @@ function buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, selectedValue =
   const row = new ActionRowBuilder().addComponents(selectMenu);
 
   const embed = new EmbedBuilder()
-    .setTitle(`❓ BẠN MUỐN MUA LOẠI NÀO CỦA ${catName.toUpperCase()}?`)
+    .setTitle(isEn ? `❓ WHICH PACKAGE OF ${catName.toUpperCase()} WOULD YOU LIKE?` : `❓ BẠN MUỐN MUA LOẠI NÀO CỦA ${catName.toUpperCase()}?`)
     .setDescription(
-      `Vui lòng chọn loại gói bạn muốn mua ở danh mục bên dưới.\nNếu bạn chưa rõ hoặc cần thỏa thuận riêng, vui lòng chọn **"Cần tư vấn và bàn bạc với người bán"** nhé!`
+      isEn 
+        ? `Please select your preferred package below.\nIf you have specific requests or need advice, choose **"Need consultation / custom order"**!`
+        : `Vui lòng chọn loại gói bạn muốn mua ở danh mục bên dưới.\nNếu bạn chưa rõ hoặc cần thỏa thuận riêng, vui lòng chọn **"Cần tư vấn và bàn bạc với người bán"** nhé!`
     )
     .setColor(cat.color || 0x00C2A8);
 
@@ -1077,7 +1089,60 @@ function buildPaymentBlock(seller, orderCode, accountIndex = 'all') {
   ].join('\n');
 }
 
-function buildMenuMessage(targetTicketChannelId = null) {
+const CATEGORY_EN_LABELS = {
+  'owo': 'OWO Cash / Cow',
+  'vps_trial': 'VPS Cloud (Trial)',
+  'chatgpt': 'ChatGPT Plus',
+  'gemini': 'Gemini Pro & Drive 5TB',
+  'spotify': 'Spotify Premium',
+  'canva': 'Canva Pro',
+  'facebook': 'Facebook Services',
+  'vcc_nitro': 'VCC (Claim Discord Nitro)',
+  'capcut': 'CapCut Pro',
+  'figma': 'Figma Pro (Edu)',
+  'boost_server': 'Discord Server Boosts',
+  'office365': 'Microsoft 365 Plus'
+};
+
+function translatePackageItemToEnglish(name, priceStr, rate = 28000) {
+  let enName = String(name || '').trim()
+    .replace(/(\d+)\s*tháng/gi, '$1 Month')
+    .replace(/(\d+)\s*thang/gi, '$1 Month')
+    .replace(/(\d+)\s*năm/gi, '$1 Year')
+    .replace(/(\d+)\s*nam/gi, '$1 Year')
+    .replace(/(\d+)\s*ngày/gi, '$1 Days')
+    .replace(/(\d+)\s*ngay/gi, '$1 Days')
+    .replace(/(\d+)T\b/g, '$1 Months')
+    .replace(/tài\s*khoản\s*riêng\s*tư/gi, 'Private Account')
+    .replace(/tk\s*riêng\s*tư/gi, 'Private Account')
+    .replace(/riêng\s*tư/gi, 'Private')
+    .replace(/rieng\s*tu/gi, 'Private')
+    .replace(/bh\s*full/gi, 'Full Warranty')
+    .replace(/ko\s*bh/gi, 'No Warranty')
+    .replace(/không\s*bh/gi, 'No Warranty')
+    .replace(/bh\s*(\d+)\s*h/gi, '$1H Warranty')
+    .replace(/bh\s*(\d+)\s*d/gi, '$1D Warranty')
+    .replace(/lượt\s*claim/gi, 'Claim')
+    .replace(/luot\s*claim/gi, 'Claim');
+
+  if (/^(\d+[mkb]?\s*-\s*\d+[mkb]?|>\s*\d+[mkb]?)$/i.test(enName)) {
+    enName = `${enName} Cow`;
+  }
+
+  const vnd = parsePrice(priceStr);
+  let usdStr = '';
+  if (vnd > 0) {
+    const usd = vnd / rate;
+    usdStr = `$${usd.toFixed(2)}`;
+  } else if (priceStr) {
+    usdStr = priceStr;
+  }
+
+  return { name: enName, price: usdStr };
+}
+
+function buildMenuMessage(targetTicketChannelId = null, lang = 'vi') {
+  const isEn = lang === 'en';
   const data = getMenuData();
   const targetTicketId = targetTicketChannelId || data.ticketChannelId || data.channels?.ticketViChannelId;
   const ticketMention = targetTicketId ? `<#${targetTicketId}>` : '#ticket';
@@ -1092,8 +1157,18 @@ function buildMenuMessage(targetTicketChannelId = null) {
     placeholder: 'Đưa ra lựa chọn'
   };
 
-  const menuConf = (data.menuEmbed && data.menuEmbed.vi) ? data.menuEmbed.vi : defaultVi;
-  const rawTitle = menuConf.title || defaultVi.title;
+  const defaultEn = {
+    title: `PRICE LIST & SERVICE CATALOG — ${data.storeName || '4AM STORE'}`,
+    line1: '• Check product & service pricing below!',
+    line2: `• Select any item from the dropdown to view details or open an order ticket at ${ticketMention}`,
+    paymentTitle: '╰─ ACCEPTED PAYMENT METHODS',
+    paymentMethods: 'Crypto: Litecoin (LTC), USDT (BEP20 / TRC20), Binance Pay (0% Fee)\nExchange Rate: $1 USD ≈ 28,000 VNĐ',
+    footerNote: 'Prices are subject to market adjustments over time',
+    placeholder: 'Choose a category to view prices'
+  };
+
+  const menuConf = isEn ? defaultEn : ((data.menuEmbed && data.menuEmbed.vi) ? data.menuEmbed.vi : defaultVi);
+  const rawTitle = menuConf.title || (isEn ? defaultEn.title : defaultVi.title);
   const finalTitle = rawTitle.replace(/\{storeName\}/g, data.storeName || '4AM STORE');
 
   const descLines = [];
@@ -1150,9 +1225,9 @@ function buildMenuMessage(targetTicketChannelId = null) {
     }
   }
 
-  let embedColor = 0x2B2D31;
+  let embedColor = isEn ? 0x00C2A8 : 0x2B2D31;
   const rawColor = data.menuEmbed?.color;
-  if (rawColor) {
+  if (rawColor && !isEn) {
     const cleanHex = rawColor.replace('#', '');
     const parsed = parseInt(cleanHex, 16);
     if (!isNaN(parsed)) embedColor = parsed;
@@ -1193,22 +1268,35 @@ function buildMenuMessage(targetTicketChannelId = null) {
         optEmoji = trimmed;
       }
     }
+    const label = isEn ? (CATEGORY_EN_LABELS[key] || cat.labelEn || cat.label || key) : (cat.label || key);
     return {
-      label: cat.label || key,
+      label,
       value: key,
       emoji: optEmoji
     };
   });
 
-  const placeholderText = menuConf.placeholder || 'Đưa ra lựa chọn';
+  const placeholderText = isEn ? 'Choose a category to view prices' : (menuConf.placeholder || 'Đưa ra lựa chọn');
   const selectMenu = new StringSelectMenuBuilder()
-    .setCustomId('select_store_category')
+    .setCustomId(`select_store_category|${lang}`)
     .setPlaceholder(placeholderText)
-    .addOptions(selectOptions.length ? selectOptions : [{ label: 'Trống', value: 'none' }]);
+    .addOptions(selectOptions.length ? selectOptions : [{ label: isEn ? 'Empty' : 'Trống', value: 'none' }]);
 
   const selectRow = new ActionRowBuilder().addComponents(selectMenu);
 
-  return { embeds: [menuEmbed], components: [selectRow] };
+  // Row 2: Language Switcher Buttons
+  const langRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('menu_switch_lang|vi')
+      .setLabel('🇻🇳 Bảng Giá Tiếng Việt (VNĐ)')
+      .setStyle(isEn ? ButtonStyle.Secondary : ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('menu_switch_lang|en')
+      .setLabel('🌐 Price List (English / USD)')
+      .setStyle(isEn ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+
+  return { embeds: [menuEmbed], components: [selectRow, langRow] };
 }
 
 /**
@@ -2321,6 +2409,16 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
+    // Lệnh đồng bộ lại bảng giá Menu: !syncmenu, !dongbomenu
+    if (lower === '!syncmenu' || lower === '!dongbomenu') {
+      const isStaff = await isStaffMember({ guild: message.guild, user: message.author });
+      if (!isStaff) {
+        return message.reply('❌ Lệnh này chỉ dành cho Staff / Quản trị viên!').catch(() => {});
+      }
+      await syncMenuChannel();
+      return message.reply('✅ Đã đồng bộ lại Bảng Giá Menu song ngữ (VNĐ & USD) thành công!').catch(() => {});
+    }
+
     // Lệnh xem bảng mã ngôn ngữ quốc tế (Check mã vùng / mã ngôn ngữ): !langs, !languages, !manguocgia, !mavung, !quocgia
     if (lower === '!langs' || lower === '!languages' || lower === '!manguocgia' || lower === '!mavung' || lower === '!quocgia' || lower === '!lang list') {
       return message.reply({ embeds: [buildLanguageListEmbed()] }).catch(() => {});
@@ -2571,6 +2669,114 @@ client.on('messageCreate', async (message) => {
   }
 });
 
+// Helper to build category detail payload (shared between select dropdown and language switch button)
+function buildCategoryDetailPayload(selectedKey, lang = 'vi') {
+  const isEn = lang === 'en';
+  const data = getMenuData();
+  const cat = data.categories?.[selectedKey];
+  if (!cat) return null;
+
+  const items = cat.items || [];
+  const USD_RATE = 28000;
+
+  const formatPackageItemBox = (rawList, isEnMode = false) => {
+    if (!Array.isArray(rawList) || rawList.length === 0) return '';
+    const parsed = rawList.map(item => {
+      const raw = String(item || '').trim().replace(/^•\s*/, '');
+      if (raw.includes('|')) {
+        const parts = raw.split('|').map(s => s.trim());
+        const name = parts[0];
+        const price = parts.slice(1).join(' | ');
+        if (isEnMode) {
+          return translatePackageItemToEnglish(name, price, USD_RATE);
+        }
+        return { name, price };
+      }
+      return { name: raw, price: '' };
+    });
+
+    const maxTotalLen = Math.max(...parsed.map(p => (p.name + p.price).length));
+
+    if (maxTotalLen <= 55) {
+      const maxNameLen = Math.max(...parsed.map(p => p.name.length));
+      const maxPriceLen = Math.max(...parsed.map(p => p.price.length));
+      return parsed.map(p => {
+        if (!p.price) return `• \` ${p.name} \``;
+        const nameCol = p.name.padEnd(maxNameLen);
+        const priceCol = p.price.padStart(maxPriceLen);
+        return `• \` ${nameCol}  │  ${priceCol} \``;
+      }).join('\n');
+    }
+
+    return parsed.map(p => {
+      if (!p.price) return `• \` ${p.name} \``;
+      return `• \` ${p.name} \`\n> ➜ **${isEnMode ? 'Price' : 'Giá'}:** \`${p.price}\``;
+    }).join('\n');
+  };
+
+  const itemsList = formatPackageItemBox(items, isEn);
+  const enCatLabel = CATEGORY_EN_LABELS[selectedKey] || cat.labelEn || cat.label;
+  const baseTitle = isEn 
+    ? (enCatLabel ? `${enCatLabel} Price List (USD)` : `Price List ${cat.label}`)
+    : (cat.title || `Bảng Giá ${cat.label}`);
+  const catTitle = (cat.emoji && !baseTitle.includes(cat.emoji)) ? `${cat.emoji} ${baseTitle}` : baseTitle;
+  
+  let noteLine = '';
+  if (isEn) {
+    noteLine = `-# • Standard exchange rate: $1 USD ≈ 28,000 VNĐ\n-# • Accepted: Crypto (LTC, USDT), Binance Pay (0% Fee)\n-# • Instant order fulfillment & support via ticket`;
+  } else {
+    const rawSubtitle = cat.subtitle || '';
+    if (rawSubtitle && rawSubtitle.trim()) {
+      noteLine = rawSubtitle.trim().split('\n').map(l => {
+        const trimmed = l.trim();
+        if (!trimmed) return '';
+        return trimmed.startsWith('-#') ? trimmed : `-# ${trimmed}`;
+      }).filter(Boolean).join('\n');
+    }
+  }
+
+  const { seller, handlers } = getSellerForCategory(selectedKey);
+  const allHandlerIds = (handlers && handlers.length > 0) ? handlers : (seller?.discordId ? [seller.discordId] : []);
+  const staffRoleId = process.env.STAFF_ROLE_ID || '1472036681048658041';
+  
+  let handlerLine = '';
+  if (allHandlerIds.length > 0) {
+    const handlerTags = allHandlerIds.map(h => `<@${h}>`).join(', ');
+    handlerLine = isEn ? `👤 **Assigned Staff:** ${handlerTags}` : `👤 **Người phụ trách:** ${handlerTags}`;
+  } else {
+    handlerLine = isEn ? `👤 **Assigned Staff:** <@&${staffRoleId}>` : `👤 **Người phụ trách:** <@&${staffRoleId}>`;
+  }
+
+  const descParts = [
+    noteLine,
+    handlerLine,
+    itemsList
+  ].filter(Boolean);
+
+  const catEmbed = new EmbedBuilder()
+    .setTitle(catTitle)
+    .setDescription(descParts.join('\n\n'))
+    .setColor(cat.color || 0x5865F2);
+
+  if (cat.bannerUrl && cat.bannerUrl.trim() && !cat.bannerUrl.includes('imgur.com/W29F1cT') && !cat.bannerUrl.includes('imgur.com/rN9xV4v')) {
+    catEmbed.setImage(cat.bannerUrl.trim());
+  }
+
+  const buyButton = new ButtonBuilder()
+    .setCustomId(`create_ticket_from_menu|${selectedKey}|${isEn ? 'en' : 'vi'}`)
+    .setLabel(isEn ? `🌐 Order ${enCatLabel}` : `🎟️ Mua ${cat.label}`)
+    .setStyle(isEn ? ButtonStyle.Primary : ButtonStyle.Success);
+
+  const switchLangButton = new ButtonBuilder()
+    .setCustomId(`switch_cat_lang|${selectedKey}|${isEn ? 'vi' : 'en'}`)
+    .setLabel(isEn ? '🇻🇳 Xem bằng Tiếng Việt (VNĐ)' : '🌐 View in English (USD)')
+    .setStyle(ButtonStyle.Secondary);
+
+  const buttonRow = new ActionRowBuilder().addComponents(buyButton, switchLangButton);
+
+  return { embeds: [catEmbed], components: [buttonRow] };
+}
+
 client.on('interactionCreate', async (i) => {
   if (uiTestMode) {
     if (i.isRepliable() && !i.replied && !i.deferred) {
@@ -2614,100 +2820,35 @@ client.on('interactionCreate', async (i) => {
   }
 
 
+  // --- Switch Menu Language in Channel ---
+  if (i.isButton() && i.customId.startsWith('menu_switch_lang|')) {
+    const targetLang = i.customId.split('|')[1] || 'vi';
+    const data = getMenuData();
+    const targetTicketId = data.ticketChannelId || data.channels?.ticketViChannelId;
+    const newMenu = buildMenuMessage(targetTicketId, targetLang);
+    return i.update(newMenu).catch(() => {});
+  }
+
+  // --- Switch Category Detail Language (Inside ephemeral popup) ---
+  if (i.isButton() && i.customId.startsWith('switch_cat_lang|')) {
+    const parts = i.customId.split('|');
+    const selectedKey = parts[1];
+    const targetLang = parts[2] || 'vi';
+    const catPayload = buildCategoryDetailPayload(selectedKey, targetLang);
+    if (!catPayload) return i.reply({ content: '❌ Không tìm thấy thông tin danh mục.', ephemeral: true });
+    return i.update(catPayload).catch(() => {});
+  }
+
   // --- Sapphire Menu Dropdown Select ---
   if (i.isStringSelectMenu() && i.customId.startsWith('select_store_category')) {
     const selectedKey = i.values[0];
-    const data = getMenuData();
-    const cat = data.categories?.[selectedKey];
-    if (!cat) {
+    const parts = i.customId.split('|');
+    const lang = parts[1] || 'vi';
+    const catPayload = buildCategoryDetailPayload(selectedKey, lang);
+    if (!catPayload) {
       return i.reply({ content: '❌ Không tìm thấy thông tin cho danh mục này.', ephemeral: true });
     }
-
-    const items = cat.items || [];
-    
-    const formatPackageItemBox = (rawList) => {
-      if (!Array.isArray(rawList) || rawList.length === 0) return '';
-      const parsed = rawList.map(item => {
-        const raw = String(item || '').trim().replace(/^•\s*/, '');
-        if (raw.includes('|')) {
-          const parts = raw.split('|').map(s => s.trim());
-          return { name: parts[0], price: parts.slice(1).join(' | ') };
-        }
-        return { name: raw, price: '' };
-      });
-
-      const maxTotalLen = Math.max(...parsed.map(p => (p.name + p.price).length));
-
-      if (maxTotalLen <= 55) {
-        const maxNameLen = Math.max(...parsed.map(p => p.name.length));
-        const maxPriceLen = Math.max(...parsed.map(p => p.price.length));
-        return parsed.map(p => {
-          if (!p.price) return `• \` ${p.name} \``;
-          const nameCol = p.name.padEnd(maxNameLen);
-          const priceCol = p.price.padStart(maxPriceLen);
-          return `• \` ${nameCol}  │  ${priceCol} \``;
-        }).join('\n');
-      }
-
-      return parsed.map(p => {
-        if (!p.price) return `• \` ${p.name} \``;
-        return `• \` ${p.name} \`\n> ➜ **Giá:** \`${p.price}\``;
-      }).join('\n');
-    };
-
-    const itemsList = formatPackageItemBox(items);
-    const baseTitle = cat.title || `Bảng Giá ${cat.label}`;
-    const catTitle = (cat.emoji && !baseTitle.includes(cat.emoji)) ? `${cat.emoji} ${baseTitle}` : baseTitle;
-    const rawSubtitle = cat.subtitle || '';
-    let noteLine = '';
-    if (rawSubtitle && rawSubtitle.trim()) {
-      noteLine = rawSubtitle.trim().split('\n').map(l => {
-        const trimmed = l.trim();
-        if (!trimmed) return '';
-        return trimmed.startsWith('-#') ? trimmed : `-# ${trimmed}`;
-      }).filter(Boolean).join('\n');
-    }
-
-    const { seller, handlers } = getSellerForCategory(selectedKey);
-    const allHandlerIds = (handlers && handlers.length > 0) ? handlers : (seller?.discordId ? [seller.discordId] : []);
-    const staffRoleId = process.env.STAFF_ROLE_ID || '1472036681048658041';
-    
-    let handlerLine = '';
-    if (allHandlerIds.length > 0) {
-      const handlerTags = allHandlerIds.map(h => `<@${h}>`).join(', ');
-      handlerLine = `👤 **Người phụ trách:** ${handlerTags}`;
-    } else {
-      handlerLine = `👤 **Người phụ trách:** <@&${staffRoleId}>`;
-    }
-
-    const descParts = [
-      noteLine,
-      handlerLine,
-      itemsList
-    ].filter(Boolean);
-
-    const catEmbed = new EmbedBuilder()
-      .setTitle(catTitle)
-      .setDescription(descParts.join('\n\n'))
-      .setColor(cat.color || 0x5865F2);
-
-    if (cat.bannerUrl && cat.bannerUrl.trim() && !cat.bannerUrl.includes('imgur.com/W29F1cT') && !cat.bannerUrl.includes('imgur.com/rN9xV4v')) {
-      catEmbed.setImage(cat.bannerUrl.trim());
-    }
-
-    const buyButtonVi = new ButtonBuilder()
-      .setCustomId(`create_ticket_from_menu|${selectedKey}|vi`)
-      .setLabel(`🎟️ Mua ${cat.label}`)
-      .setStyle(ButtonStyle.Success);
-
-    const buyButtonEn = new ButtonBuilder()
-      .setCustomId(`create_ticket_from_menu|${selectedKey}|en`)
-      .setLabel(`🌐 Order (English)`)
-      .setStyle(ButtonStyle.Primary);
-
-    const buttonRow = new ActionRowBuilder().addComponents(buyButtonVi, buyButtonEn);
-
-    return i.reply({ embeds: [catEmbed], components: [buttonRow], ephemeral: true });
+    return i.reply({ ...catPayload, ephemeral: true });
   }
 
   // --- Create Ticket From Menu Button ---
@@ -2860,7 +3001,7 @@ client.on('interactionCreate', async (i) => {
       mentions.push(`<@&${staffRoleId}>`);
     }
 
-    const itemPrompt = buildCategoryItemPrompt(cat, categoryKey, orderDraftNo);
+    const itemPrompt = buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, null, isEn);
     const ticketActionRow = buildTicketActionRow(orderDraftNo, categoryKey, true);
     const ticketComponents = [itemPrompt.row, ticketActionRow];
     if (isEn) {
@@ -3221,8 +3362,9 @@ client.on('interactionCreate', async (i) => {
     }
     const pingStr = pings.length ? pings.join(' ') : (staffRoleId ? `<@&${staffRoleId}>` : 'Nhân viên hỗ trợ');
 
+    const isChannelEn = (i.channel.name || '').includes('-en-') || ticketTargetLangMap.get(i.channel.id) === 'en';
     if (selectedVal === 'consult_seller') {
-      const updatedPrompt = buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, 'consult_seller');
+      const updatedPrompt = buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, 'consult_seller', isChannelEn);
       const consultEmbed = new EmbedBuilder()
         .setTitle('💬 YÊU CẦU TƯ VẤN & BÀN BẠC VỚI NGƯỜI BÁN')
         .setDescription([
@@ -3368,7 +3510,7 @@ client.on('interactionCreate', async (i) => {
         });
       }
 
-      const updatedPrompt = buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, selectedVal);
+      const updatedPrompt = buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, selectedVal, isChannelEn);
 
       const descLines = [
         `Khách hàng <@${i.user.id}> đã chọn loại sản phẩm:`,
