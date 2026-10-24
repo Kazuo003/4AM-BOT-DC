@@ -2197,27 +2197,27 @@ function getOwoGuidePayload(tab = 'menu') {
     new ButtonBuilder()
       .setCustomId('owo_guide_c1')
       .setLabel('1')
-      .setStyle(tab === 'c1' ? ButtonStyle.Success : ButtonStyle.Primary)
+      .setStyle(ButtonStyle.Primary)
       .setDisabled(tab === 'c1'),
     new ButtonBuilder()
       .setCustomId('owo_guide_c2')
       .setLabel('2')
-      .setStyle(tab === 'c2' ? ButtonStyle.Success : ButtonStyle.Primary)
+      .setStyle(ButtonStyle.Primary)
       .setDisabled(tab === 'c2'),
     new ButtonBuilder()
       .setCustomId('owo_guide_c3')
       .setLabel('3')
-      .setStyle(tab === 'c3' ? ButtonStyle.Success : ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Primary)
       .setDisabled(tab === 'c3'),
     new ButtonBuilder()
       .setCustomId('owo_guide_note')
       .setLabel('Lưu ý')
-      .setStyle(tab === 'note' ? ButtonStyle.Success : ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Danger)
       .setDisabled(tab === 'note'),
     new ButtonBuilder()
       .setCustomId('owo_guide_menu')
       .setLabel('Home')
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Success)
       .setDisabled(tab === 'menu')
   );
 
