@@ -59,27 +59,31 @@ function findMatchingAutoResponse(content, channelId) {
       if (!item.channels.includes(channelId)) continue;
     }
 
-    const triggerTrimmed = String(item.trigger || '').trim();
-    const triggerLower = triggerTrimmed.toLowerCase();
-    if (!triggerLower) continue;
+    // Hỗ trợ mảng triggers hoặc chuỗi trigger đơn / phân tách bằng dấu phẩy
+    let triggers = [];
+    if (Array.isArray(item.triggers) && item.triggers.length > 0) {
+      triggers = item.triggers.map(t => String(t).trim().toLowerCase()).filter(Boolean);
+    } else if (item.trigger) {
+      triggers = String(item.trigger).split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+    }
+    if (triggers.length === 0) continue;
 
     let isMatch = false;
     const matchType = (item.matchType || 'exact').toLowerCase();
 
-    if (matchType === 'exact') {
-      // Khớp chính xác (không phân biệt hoa thường)
-      isMatch = (lower === triggerLower);
-    } else if (matchType === 'contains') {
-      // Tin nhắn có chứa từ khóa
-      isMatch = lower.includes(triggerLower);
-    } else if (matchType === 'startswith') {
-      // Bắt đầu bằng từ khóa
-      isMatch = lower.startsWith(triggerLower);
+    for (const t of triggers) {
+      if (matchType === 'exact') {
+        if (lower === t) { isMatch = true; break; }
+      } else if (matchType === 'contains') {
+        if (lower.includes(t)) { isMatch = true; break; }
+      } else if (matchType === 'startswith') {
+        if (lower.startsWith(t)) { isMatch = true; break; }
+      }
     }
 
     if (isMatch) {
       // Kiểm tra cooldown (3 giây mỗi kênh)
-      const cdKey = `${channelId}:${item.id || triggerLower}`;
+      const cdKey = `${channelId}:${item.id || triggers[0]}`;
       const now = Date.now();
       const lastTrigger = cooldownMap.get(cdKey) || 0;
       const cooldownMs = (item.cooldownSec || 3) * 1000;
@@ -100,9 +104,9 @@ function findMatchingAutoResponse(content, channelId) {
 /**
  * Thêm hoặc cập nhật Auto Response
  */
-function addOrUpdateAutoResponse({ id, trigger, response, imageUrl, matchType = 'exact', replyMode = 'reply' }) {
+function addOrUpdateAutoResponse({ id, trigger, triggers, response, imageUrl, matchType = 'exact', replyMode = 'reply' }) {
   const list = getAutoResponses();
-  const cleanTrigger = String(trigger || '').trim();
+  const cleanTrigger = String(trigger || (Array.isArray(triggers) ? triggers.join(', ') : '')).trim();
   if (!cleanTrigger) throw new Error('Từ khóa trigger không được để trống.');
 
   let existingIdx = -1;
@@ -113,9 +117,14 @@ function addOrUpdateAutoResponse({ id, trigger, response, imageUrl, matchType = 
     existingIdx = list.findIndex(x => x.trigger.trim().toLowerCase() === cleanTrigger.toLowerCase());
   }
 
+  const parsedTriggers = Array.isArray(triggers) && triggers.length > 0 
+    ? triggers.map(s => String(s).trim()).filter(Boolean)
+    : cleanTrigger.split(',').map(s => s.trim()).filter(Boolean);
+
   const entry = {
     id: existingIdx >= 0 ? list[existingIdx].id : (id || nanoid(8)),
     trigger: cleanTrigger,
+    triggers: parsedTriggers,
     response: response ? String(response).trim() : '',
     imageUrl: imageUrl ? String(imageUrl).trim() : '',
     matchType: matchType === 'contains' ? 'contains' : 'exact',

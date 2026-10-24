@@ -20,5 +20,28 @@
     "enabled": true,
     "updatedAt": "2026-10-18T08:32:54.961Z",
     "createdAt": "2026-10-18T08:32:54.961Z"
+  },
+  {
+    "id": "gdowo4am",
+    "trigger": "gd owo, giao dịch owo, giao dich owo, nhận cow, nhan cow, cách nhận cow, cach nhan cow, hướng dẫn owo, !owo, !cow",
+    "triggers": [
+      "gd owo",
+      "giao dịch owo",
+      "giao dich owo",
+      "nhận cow",
+      "nhan cow",
+      "cách nhận cow",
+      "cach nhan cow",
+      "hướng dẫn owo",
+      "!owo",
+      "!cow"
+    ],
+    "response": "🐮 **HƯỚNG DẪN GIAO DỊCH OWO / NHẬN COW — 4AM STORE** 🐮\n\nĐể nhận Cow nhanh chóng và chính xác nhất, bạn vui lòng chọn **1 trong 3 cách** dưới đây và gửi thông tin theo đúng cú pháp:\n\n━━━━━━━━━━━━━━━━━━━━\n📌 **CÁCH 1: Nhận Tại Server MLTN (Nhanh & Tiện Nhất)**\n• **Link tham gia server:** https://discord.gg/PGKygsUGps\n• **Cú pháp gửi vào ticket:**\n```\nID hoặc Username | Số lượng Cow\n```\n*(Ví dụ: `895890393806274570 | 5m` hoặc `fouram_shop | 2m`)*\n\n━━━━━━━━━━━━━━━━━━━━\n📌 **CÁCH 2: Mời Bot Cow Delivery Vào Server Của Bạn**\n• **Link mời Bot:** https://discord.com/oauth2/authorize?client_id=1561626124574785567&scope=bot+applications.commands&permissions=2147879937\n• **Cú pháp gửi vào ticket:**\n```\nID Server | ID Kênh | ID hoặc Username | Số lượng Cow\n```\n*(Ví dụ: `1369824487524143154 | 1513357276256403558 | 895890393806274570 | 5m`)*\n*(Lưu ý: Đảm bảo Bot có quyền gửi tin nhắn và dùng lệnh slash tại kênh đó).*\n\n━━━━━━━━━━━━━━━━━━━━\n📌 **CÁCH 3: Staff Join Trực Tiếp Server Của Bạn (Thủ Công)**\n*(Chỉ áp dụng khi bạn không thể thực hiện Cách 1 hoặc Cách 2)*\n• **Cú pháp gửi vào ticket:**\n```\nLink Server (Vĩnh viễn) | ID hoặc Username | Số lượng Cow\n```\n*(Ví dụ: `https://discord.gg/fouram | fouram_shop | 5m`)*\n\n━━━━━━━━━━━━━━━━━━━━\n⏱️ *Sau khi gửi thông tin theo đúng cú pháp, vui lòng đợi trong giây lát, Shop sẽ xử lý và chuyển Cow ngay cho bạn! Cảm ơn bạn đã tin tưởng 4AM STORE!* ✨",
+    "imageUrl": "",
+    "matchType": "contains",
+    "replyMode": "reply",
+    "enabled": true,
+    "updatedAt": "2026-10-24T07:35:00.000Z",
+    "createdAt": "2026-10-24T07:35:00.000Z"
   }
 ]
