@@ -61,7 +61,12 @@ const {
   initGiveawayScheduler
 } = require('./giveawayManager');
 
-const { translateText, isProbablyVietnamese } = require('./translator');
+const { 
+  translateText, 
+  isProbablyVietnamese, 
+  resolveLangCode, 
+  buildLanguageListEmbed 
+} = require('./translator');
 const ticketTargetLangMap = new Map();
 const ticketTranslateDisabledSet = new Set();
 
@@ -2316,6 +2321,11 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
+    // Lệnh xem bảng mã ngôn ngữ quốc tế (Check mã vùng / mã ngôn ngữ): !langs, !languages, !manguocgia, !mavung, !quocgia
+    if (lower === '!langs' || lower === '!languages' || lower === '!manguocgia' || lower === '!mavung' || lower === '!quocgia' || lower === '!lang list') {
+      return message.reply({ embeds: [buildLanguageListEmbed()] }).catch(() => {});
+    }
+
     // ------------------------------------------
     // TỰ ĐỘNG DỊCH HAI CHIỀU TRONG TICKET QUỐC TẾ
     // ------------------------------------------
@@ -2323,6 +2333,11 @@ client.on('messageCreate', async (message) => {
       const chName = (message.channel.name || '').toLowerCase();
       const isEnTicket = chName.includes('-en-') || ticketTargetLangMap.has(message.channel.id);
       const isTranslateDisabled = ticketTranslateDisabledSet.has(message.channel.id);
+
+      // Xem bảng mã ngôn ngữ ngay trong ticket
+      if (lower === '!lang' || lower === '!lang help') {
+        return message.reply({ embeds: [buildLanguageListEmbed()] }).catch(() => {});
+      }
 
       // Lệnh tắt bật dịch thủ công trong ticket
       if (lower === '!tr on' || lower === '!translate on') {
@@ -2339,11 +2354,15 @@ client.on('messageCreate', async (message) => {
       }
 
       if (lower.startsWith('!lang ')) {
-        const langCode = lower.replace('!lang ', '').trim().toLowerCase();
-        if (langCode && langCode.length >= 2 && langCode.length <= 5) {
+        const rawInput = lower.replace('!lang ', '').trim();
+        const langCode = resolveLangCode(rawInput);
+        if (langCode) {
           ticketTranslateDisabledSet.delete(message.channel.id);
           ticketTargetLangMap.set(message.channel.id, langCode);
-          await message.reply(`🌐 **Ngôn ngữ mục tiêu của Ticket đã đổi thành:** \`${langCode.toUpperCase()}\`.\n(Bot sẽ tự động dịch hai chiều giữa Tiếng Việt và ${langCode.toUpperCase()})`).catch(() => {});
+          await message.reply(`🌐 **Ngôn ngữ mục tiêu của Ticket đã đổi thành:** \`${langCode.toUpperCase()}\`.\n• Bot sẽ tự động dịch hai chiều giữa Tiếng Việt và ${langCode.toUpperCase()}.\n• Gõ \`!langs\` nếu muốn xem lại danh sách mã ngôn ngữ khác.`).catch(() => {});
+          return;
+        } else {
+          await message.reply(`⚠️ Không nhận diện được mã hoặc tên ngôn ngữ \`${rawInput}\`.\n👉 Gõ \`!langs\` để xem bảng danh sách các mã hỗ trợ nhé!`).catch(() => {});
           return;
         }
       }

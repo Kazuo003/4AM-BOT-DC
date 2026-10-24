@@ -3,7 +3,101 @@
  * Supports 100+ languages with automatic fallback & Discord token preservation
  */
 
+const { EmbedBuilder } = require('discord.js');
+
 const translationCache = new Map(); // key -> translatedText (cache 500 entries)
+
+const LANG_NAME_MAP = {
+  // Tiếng Anh (Mặc định)
+  'en': 'en', 'eng': 'en', 'english': 'en', 'anh': 'en', 'us': 'en', 'uk': 'en',
+  // Indonesia
+  'id': 'id', 'indo': 'id', 'indonesia': 'id', 'bahasa': 'id',
+  // Philippines
+  'tl': 'tl', 'fil': 'tl', 'phil': 'tl', 'philippines': 'tl', 'pinoy': 'tl', 'tagalog': 'tl',
+  // Trung Quốc
+  'zh': 'zh', 'cn': 'zh', 'china': 'zh', 'chinese': 'zh', 'trung': 'zh', 'tau': 'zh',
+  // Nhật Bản
+  'ja': 'ja', 'jp': 'ja', 'japan': 'ja', 'japanese': 'ja', 'nhat': 'ja',
+  // Hàn Quốc
+  'ko': 'ko', 'kr': 'ko', 'korea': 'ko', 'korean': 'ko', 'han': 'ko',
+  // Thái Lan
+  'th': 'th', 'thai': 'th', 'thailan': 'th', 'thailand': 'th',
+  // Nga
+  'ru': 'ru', 'russia': 'ru', 'russian': 'ru', 'nga': 'ru',
+  // Pháp
+  'fr': 'fr', 'france': 'fr', 'french': 'fr', 'phap': 'fr',
+  // Tây Ban Nha
+  'es': 'es', 'spain': 'es', 'spanish': 'es', 'taybannha': 'es',
+  // Đức
+  'de': 'de', 'germany': 'de', 'german': 'de', 'duc': 'de',
+  // Bồ Đào Nha / Brazil
+  'pt': 'pt', 'portugal': 'pt', 'brazil': 'pt', 'portuguese': 'pt', 'bodoanha': 'pt',
+  // Ý
+  'it': 'it', 'italy': 'it', 'italian': 'it', 'y': 'it',
+  // Ấn Độ
+  'hi': 'hi', 'india': 'hi', 'hindi': 'hi', 'ando': 'hi',
+  // Malaysia
+  'ms': 'ms', 'malaysia': 'ms', 'malay': 'ms',
+  // Thổ Nhĩ Kỳ
+  'tr': 'tr', 'turkey': 'tr', 'turkish': 'tr', 'thonhiki': 'tr',
+  // Việt Nam
+  'vi': 'vi', 'vietnam': 'vi', 'viet': 'vi', 'vietnamese': 'vi'
+};
+
+function resolveLangCode(input) {
+  if (!input || typeof input !== 'string') return null;
+  const clean = input.trim().toLowerCase();
+  if (LANG_NAME_MAP[clean]) return LANG_NAME_MAP[clean];
+  if (/^[a-z]{2,5}$/.test(clean)) return clean;
+  return null;
+}
+
+function buildLanguageListEmbed() {
+  return new EmbedBuilder()
+    .setTitle('🌐 BẢNG TRA CỨU MÃ NGÔN NGỮ QUỐC TẾ (AUTO-TRANSLATE)')
+    .setDescription(
+      `Hệ thống hỗ trợ tự động dịch hai chiều **100+ thứ tiếng**.\n` +
+      `Staff có thể gõ mã 2 chữ cái hoặc tên nước để chuyển: \`!lang <mã/tên>\`\n` +
+      `*(Ví dụ: \`!lang id\` hoặc \`!lang indo\`, \`!lang tl\` hoặc \`!lang phil\`)*`
+    )
+    .setColor(0x00C2A8)
+    .addFields(
+      {
+        name: '🌏 Đông Nam Á & Châu Á (Cộng đồng OwO / Game)',
+        value: 
+          '• 🇺🇸 **`en`** (hoặc `!lang anh`) : Tiếng Anh (Mặc định toàn cầu)\n' +
+          '• 🇮🇩 **`id`** (hoặc `!lang indo`) : Indonesia (Indo / Bahasa Indonesia)\n' +
+          '• 🇵🇭 **`tl`** (hoặc `!lang phil`) : Philippines (Tagalog / Pinoy)\n' +
+          '• 🇹🇭 **`th`** (hoặc `!lang thai`) : Thái Lan (Thai)\n' +
+          '• 🇨🇳 **`zh`** (hoặc `!lang trung`) : Trung Quốc (Chinese)\n' +
+          '• 🇯🇵 **`ja`** (hoặc `!lang nhat`) : Nhật Bản (Japanese)\n' +
+          '• 🇰🇷 **`ko`** (hoặc `!lang han`) : Hàn Quốc (Korean)\n' +
+          '• 🇮🇳 **`hi`** (hoặc `!lang ando`) : Ấn Độ (Hindi)\n' +
+          '• 🇲🇾 **`ms`** (hoặc `!lang malay`) : Malaysia (Malay)'
+      },
+      {
+        name: '🌍 Châu Âu & Mỹ La-tinh',
+        value:
+          '• 🇷🇺 **`ru`** (hoặc `!lang nga`) : Nga (Russian)\n' +
+          '• 🇪🇸 **`es`** (hoặc `!lang taybannha`) : Tây Ban Nha (Spanish)\n' +
+          '• 🇫🇷 **`fr`** (hoặc `!lang phap`) : Pháp (French)\n' +
+          '• 🇩🇪 **`de`** (hoặc `!lang duc`) : Đức (German)\n' +
+          '• 🇧🇷 **`pt`** (hoặc `!lang bodoanha`) : Bồ Đào Nha / Brazil (Portuguese)\n' +
+          '• 🇮🇹 **`it`** (hoặc `!lang y`) : Ý (Italian)\n' +
+          '• 🇹🇷 **`tr`** (hoặc `!lang thonhiki`) : Thổ Nhĩ Kỳ (Turkish)'
+      },
+      {
+        name: '⚡ Cú pháp & Phím tắt nhanh trong Ticket',
+        value:
+          '• `!lang <mã/tên>` : Đổi ngôn ngữ dịch mục tiêu (Ví dụ: `!lang indo`, `!lang ru`)\n' +
+          '• `!tr on` : Bật dịch tự động hai chiều\n' +
+          '• `!tr off` : Tắt tạm thời dịch tự động\n' +
+          '• `!langs` hoặc `!lang` : Xem lại bảng tra cứu này bất cứ lúc nào'
+      }
+    )
+    .setFooter({ text: '4AM STORE • Hệ thống dịch thuật quốc tế đa nguồn' })
+    .setTimestamp();
+}
 
 /**
  * Check if text has Vietnamese characteristics (accents or common keywords)
@@ -120,5 +214,7 @@ async function translateText(text, from = 'auto', to = 'vi') {
 
 module.exports = {
   isProbablyVietnamese,
-  translateText
+  translateText,
+  resolveLangCode,
+  buildLanguageListEmbed
 };
