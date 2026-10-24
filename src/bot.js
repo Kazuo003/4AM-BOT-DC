@@ -2409,6 +2409,28 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
+    // Lệnh cài đặt nhanh GROQ_API_KEY cho Staff / Admin (Tự động xóa tin nhắn để bảo mật)
+    if (lower.startsWith('!setgroq ')) {
+      const isStaff = await isStaffMember({ guild: message.guild, user: message.author });
+      if (!isStaff) return;
+      const key = trimmed.split(/\s+/)[1];
+      if (key && key.startsWith('gsk_')) {
+        process.env.GROQ_API_KEY = key;
+        try {
+          const envPath = path.resolve(__dirname, '..', '.env');
+          let env = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
+          if (env.includes('GROQ_API_KEY=')) {
+            env = env.replace(/GROQ_API_KEY=.*/g, `GROQ_API_KEY=${key}`);
+          } else {
+            env += `\nGROQ_API_KEY=${key}\n`;
+          }
+          fs.writeFileSync(envPath, env, 'utf8');
+        } catch (_) {}
+        await message.delete().catch(() => {});
+        return message.channel.send('🤖 **Đã kích hoạt AI Groq thông minh cho hệ thống dịch thuật thành công!** (Tin nhắn chứa key đã được tự động xóa để bảo mật)').catch(() => {});
+      }
+    }
+
     // Lệnh đồng bộ lại bảng giá Menu: !syncmenu, !dongbomenu
     if (lower === '!syncmenu' || lower === '!dongbomenu') {
       const isStaff = await isStaffMember({ guild: message.guild, user: message.author });
