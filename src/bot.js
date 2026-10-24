@@ -1162,7 +1162,7 @@ function buildMenuMessage(targetTicketChannelId = null, lang = 'vi') {
     line1: '• Check product & service pricing below!',
     line2: `• Select any item from the dropdown to view details or open an order ticket at ${ticketMention}`,
     paymentTitle: '╰─ ACCEPTED PAYMENT METHODS',
-    paymentMethods: 'Crypto: Litecoin (LTC), USDT (BEP20 / TRC20), Binance Pay (0% Fee)\nExchange Rate: $1 USD ≈ 28,000 VNĐ',
+    paymentMethods: 'Crypto: Litecoin (LTC), USDT (BEP20 / TRC20), Binance Pay (0% Fee)',
     footerNote: 'Prices are subject to market adjustments over time',
     placeholder: 'Choose a category to view prices'
   };
@@ -2723,7 +2723,7 @@ function buildCategoryDetailPayload(selectedKey, lang = 'vi') {
   
   let noteLine = '';
   if (isEn) {
-    noteLine = `-# • Standard exchange rate: $1 USD ≈ 28,000 VNĐ\n-# • Accepted: Crypto (LTC, USDT), Binance Pay (0% Fee)\n-# • Instant order fulfillment & support via ticket`;
+    noteLine = `-# • Accepted: Crypto (LTC, USDT), Binance Pay (0% Fee)\n-# • Instant order fulfillment & support via ticket`;
   } else {
     const rawSubtitle = cat.subtitle || '';
     if (rawSubtitle && rawSubtitle.trim()) {
