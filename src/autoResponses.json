@@ -28,12 +28,12 @@
       "4amowo",
       "4am owo"
     ],
-    "response": "🐮 **HƯỚNG DẪN GIAO DỊCH OWO / NHẬN COW — 4AM STORE** 🐮\n\nĐể nhận Cow nhanh chóng và chính xác nhất, bạn vui lòng chọn **1 trong 3 cách** dưới đây và gửi thông tin theo đúng cú pháp:\n\n━━━━━━━━━━━━━━━━━━━━\n📌 **CÁCH 1: Nhận Tại Server MLTN (Nhanh Nhất)**\n• **Link tham gia server:** https://discord.gg/PGKygsUGps\n• **Cú pháp gửi vào ticket:**\n```\nID hoặc Username | Số lượng Cow\n```\n*(Ví dụ: `895890393806274570 | 5m` hoặc `fouram_shop | 2m`)*\n\n━━━━━━━━━━━━━━━━━━━━\n📌 **CÁCH 2: Mời Bot Cow Delivery Vào Server Của Bạn (Nhanh Tương Đương Cách 1)**\n• **Link mời Bot:** https://discord.com/oauth2/authorize?client_id=1561626124574785567&scope=bot+applications.commands&permissions=2147879937\n• **Cú pháp gửi vào ticket:**\n```\nID Server | ID Kênh | ID hoặc Username | Số lượng Cow\n```\n*(Ví dụ: `1369824487524143154 | 1513357276256403558 | 895890393806274570 | 5m`)*\n*(Lưu ý: Đảm bảo Bot có quyền gửi tin nhắn và dùng lệnh slash tại kênh đó).*\n\n━━━━━━━━━━━━━━━━━━━━\n📌 **CÁCH 3: Staff Join Trực Tiếp Server Của Bạn (Sẽ Đợi Lâu Nhất)**\n• **Cú pháp gửi vào ticket:**\n```\nLink Server (Vĩnh viễn) | ID hoặc Username | Số lượng Cow\n```\n*(Ví dụ: `https://discord.gg/fouram | fouram_shop | 5m`)*\n*(Cách này phụ thuộc vào thời gian Staff trực tiếp online nên sẽ đợi lâu nhất).* \n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ **LƯU Ý CHUNG:**\n• **Nếu dùng Cách 2 hoặc Cách 3:** Vui lòng **tắt xác minh số điện thoại (Verify Phone)** của Server. Nếu server bạn có Bot verify người thật, hãy **để 1 kênh public (công khai)** cho Bot/Staff bên mình vào chat gửi lệnh mà không bị chặn, vì bên mình không thể tự bấm verify được.\n• Vui lòng gửi đúng cú pháp (có dấu gạch đứng `|`) để hệ thống / Staff xử lý nhanh nhất.\n• Sau khi gửi thông tin, vui lòng đợi trong giây lát, Shop sẽ xử lý và chuyển Cow ngay cho bạn! Cảm ơn bạn đã tin tưởng 4AM STORE! ✨",
+    "response": "🐮 **HƯỚNG DẪN GIAO DỊCH OWO / NHẬN COW — 4AM STORE** 🐮\n\nVui lòng **bấm vào các nút bên dưới** để chọn cách nhận Cow bạn muốn:\n\n⚡ **Cách 1: Server MLTN** — Nhanh nhất\n🤖 **Cách 2: Bot Delivery** — Nhanh tương đương Cách 1\n👤 **Cách 3: Staff Join Server** — Thủ công, sẽ đợi lâu nhất\n\n*(Khuyến khích đọc kỹ nút **Lưu ý chung** trước khi gửi thông tin).* ✨",
     "imageUrl": "",
     "matchType": "contains",
     "replyMode": "reply",
     "enabled": true,
-    "updatedAt": "2026-10-24T07:47:00.000Z",
+    "updatedAt": "2026-10-24T08:44:00.000Z",
     "createdAt": "2026-10-24T07:35:00.000Z"
   }
 ]

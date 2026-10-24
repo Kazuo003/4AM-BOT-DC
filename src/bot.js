@@ -2141,6 +2141,91 @@ client.once('ready', async () => {
 
 
 // ==========================================
+// OWO DELIVERY GUIDE PAYLOAD HELPER
+// ==========================================
+function getOwoGuidePayload(tab = 'menu') {
+  let content = '';
+
+  if (tab === 'c1') {
+    content = `🐮 **CÁCH 1: NHẬN TẠI SERVER MLTN (NHANH NHẤT)** 🐮\n\n` +
+      `• **Bước 1:** Tham gia server MLTN qua link: https://discord.gg/PGKygsUGps\n` +
+      `• **Bước 2:** Gửi thông tin vào ticket theo cú pháp:\n` +
+      `\`\`\`\nID hoặc Username | Số lượng Cow\n\`\`\`\n` +
+      `*(Ví dụ: \`895890393806274570 | 5m\` hoặc \`fouram_shop | 2m\`)*`;
+  } else if (tab === 'c2') {
+    content = `🐮 **CÁCH 2: MỜI BOT COW DELIVERY VÀO SERVER (NHANH TƯƠNG ĐƯƠNG CÁCH 1)** 🐮\n\n` +
+      `• **Bước 1:** Thêm Bot vào server của bạn qua link:\n` +
+      `https://discord.com/oauth2/authorize?client_id=1561626124574785567&scope=bot+applications.commands&permissions=2147879937\n` +
+      `• **Bước 2:** Cấp quyền cho Bot xem kênh, gửi tin nhắn và dùng lệnh slash.\n` +
+      `• **Bước 3:** Gửi thông tin vào ticket theo cú pháp:\n` +
+      `\`\`\`\nID Server | ID Kênh | ID hoặc Username | Số lượng Cow\n\`\`\`\n` +
+      `*(Ví dụ: \`1369824487524143154 | 1513357276256403558 | 895890393806274570 | 5m\`)*`;
+  } else if (tab === 'c3') {
+    content = `🐮 **CÁCH 3: STAFF JOIN TRỰC TIẾP SERVER CỦA BẠN (SẼ ĐỢI LÂU NHẤT)** 🐮\n\n` +
+      `• Gửi thông tin vào ticket theo cú pháp:\n` +
+      `\`\`\`\nLink Server (Vĩnh viễn) | ID hoặc Username | Số lượng Cow\n\`\`\`\n` +
+      `*(Ví dụ: \`https://discord.gg/fouram | fouram_shop | 5m\`)*\n\n` +
+      `*(Lưu ý: Cách này phụ thuộc vào thời gian Staff trực tiếp online nên sẽ đợi lâu nhất).*`;
+  } else if (tab === 'note') {
+    content = `⚠️ **LƯU Ý QUAN TRỌNG KHI GIAO DỊCH OWO — 4AM STORE** ⚠️\n\n` +
+      `• **Nếu dùng Cách 2 hoặc Cách 3:**\n` +
+      `  - Vui lòng **tắt xác minh số điện thoại (Verify Phone)** của Server.\n` +
+      `  - Nếu server bạn có Bot verify người thật (Captcha, reaction role...), hãy **để 1 kênh public (công khai)** cho Bot/Staff bên mình vào chat gửi lệnh mà không bị chặn (vì hệ thống bên mình không thể tự bấm verify được).\n` +
+      `• **Cú pháp:** Vui lòng gửi đúng cú pháp (có dấu gạch đứng \`|\`) để hệ thống / Staff xử lý nhanh nhất.\n` +
+      `• Sau khi gửi thông tin, vui lòng đợi trong giây lát, Shop sẽ xử lý và chuyển Cow ngay cho bạn! Cảm ơn bạn đã tin tưởng 4AM STORE! ✨`;
+  } else {
+    // Menu chính
+    content = `🐮 **HƯỚNG DẪN GIAO DỊCH OWO / NHẬN COW — 4AM STORE** 🐮\n\n` +
+      `Vui lòng **bấm vào các nút bên dưới** để chọn cách nhận Cow bạn muốn:\n\n` +
+      `⚡ **Cách 1: Server MLTN** — Nhanh nhất\n` +
+      `🤖 **Cách 2: Bot Delivery** — Nhanh tương đương Cách 1\n` +
+      `👤 **Cách 3: Staff Join Server** — Thủ công, sẽ đợi lâu nhất\n\n` +
+      `*(Khuyến khích đọc kỹ nút **Lưu ý chung** trước khi gửi thông tin).* ✨`;
+  }
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('owo_guide_c1')
+      .setLabel('Cách 1: Server MLTN')
+      .setEmoji('⚡')
+      .setStyle(tab === 'c1' ? ButtonStyle.Success : ButtonStyle.Primary)
+      .setDisabled(tab === 'c1'),
+    new ButtonBuilder()
+      .setCustomId('owo_guide_c2')
+      .setLabel('Cách 2: Bot Delivery')
+      .setEmoji('🤖')
+      .setStyle(tab === 'c2' ? ButtonStyle.Success : ButtonStyle.Primary)
+      .setDisabled(tab === 'c2'),
+    new ButtonBuilder()
+      .setCustomId('owo_guide_c3')
+      .setLabel('Cách 3: Staff Join Server')
+      .setEmoji('👤')
+      .setStyle(tab === 'c3' ? ButtonStyle.Success : ButtonStyle.Secondary)
+      .setDisabled(tab === 'c3')
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('owo_guide_note')
+      .setLabel('Lưu Ý Chung')
+      .setEmoji('⚠️')
+      .setStyle(tab === 'note' ? ButtonStyle.Success : ButtonStyle.Secondary)
+      .setDisabled(tab === 'note'),
+    new ButtonBuilder()
+      .setCustomId('owo_guide_menu')
+      .setLabel('Menu Chính')
+      .setEmoji('📋')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(tab === 'menu')
+  );
+
+  return {
+    content,
+    components: [row1, row2]
+  };
+}
+
+// ==========================================
 // AUTO RESPONSE LISTENER (Tự động trả lời theo từ khóa)
 // ==========================================
 client.on('messageCreate', async (message) => {
@@ -2286,30 +2371,36 @@ client.on('messageCreate', async (message) => {
     if (!matched) return;
 
     const payload = {};
-    if (matched.response) {
-      payload.content = matched.response;
-    }
+    if (matched.id === 'gdowo4am') {
+      const owoPayload = getOwoGuidePayload('menu');
+      payload.content = owoPayload.content;
+      payload.components = owoPayload.components;
+    } else {
+      if (matched.response) {
+        payload.content = matched.response;
+      }
 
-    const imgUrl = (matched.imageUrl || '').trim();
-    if (imgUrl) {
-      if (/^https?:\/\//i.test(imgUrl)) {
-        payload.files = [{
-          attachment: imgUrl,
-          name: 'autoresponse_media' + (path.extname(imgUrl.split('?')[0]) || '.png')
-        }];
-      } else {
-        const localPath = path.isAbsolute(imgUrl) ? imgUrl : path.resolve(__dirname, '..', imgUrl);
-        if (fs.existsSync(localPath)) {
+      const imgUrl = (matched.imageUrl || '').trim();
+      if (imgUrl) {
+        if (/^https?:\/\//i.test(imgUrl)) {
           payload.files = [{
-            attachment: localPath,
-            name: path.basename(localPath)
+            attachment: imgUrl,
+            name: 'autoresponse_media' + (path.extname(imgUrl.split('?')[0]) || '.png')
           }];
+        } else {
+          const localPath = path.isAbsolute(imgUrl) ? imgUrl : path.resolve(__dirname, '..', imgUrl);
+          if (fs.existsSync(localPath)) {
+            payload.files = [{
+              attachment: localPath,
+              name: path.basename(localPath)
+            }];
+          }
         }
       }
     }
 
-    // Nếu không có nội dung lẫn ảnh thì bỏ qua
-    if (!payload.content && (!payload.files || !payload.files.length)) return;
+    // Nếu không có nội dung lẫn ảnh lẫn component thì bỏ qua
+    if (!payload.content && (!payload.files || !payload.files.length) && (!payload.components || !payload.components.length)) return;
 
     // Gửi trả lời: Reply hoặc Send vào kênh
     if (matched.replyMode === 'send') {
@@ -2340,6 +2431,14 @@ client.on('interactionCreate', async (i) => {
     return;
   }
   try {
+  // --- OwO Cow Delivery Guide Buttons ---
+  if (i.isButton() && i.customId.startsWith('owo_guide_')) {
+    const tab = i.customId.replace('owo_guide_', '');
+    const owoPayload = getOwoGuidePayload(tab);
+    await i.update(owoPayload).catch(() => {});
+    return;
+  }
+
   // --- Deprecated Language Role Buttons (No longer required) ---
   if (i.isButton() && (i.customId === 'role_lang_vi' || i.customId === 'role_lang_en')) {
     return i.reply({
