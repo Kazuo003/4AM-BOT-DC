@@ -2,23 +2,52 @@ const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-const giveawaysFile = path.resolve(__dirname, 'giveaways.json');
+// Thư mục dữ liệu vĩnh viễn (nằm ngoài phạm vi Git để không bao giờ bị ghi đè khi update)
+const dataDir = path.resolve(__dirname, '..', 'data');
+if (!fs.existsSync(dataDir)) {
+  try { fs.mkdirSync(dataDir, { recursive: true }); } catch (_) {}
+}
+
+const persistentGiveawaysFile = path.resolve(dataDir, 'giveaways.json');
+const backupGiveawaysFile = path.resolve(dataDir, 'giveaways.bak.json');
+const legacyGiveawaysFile = path.resolve(__dirname, 'giveaways.json');
+
 const DAILY_GIVEAWAY_CHANNEL_ID = process.env.DAILY_GIVEAWAY_CHANNEL_ID || '1563227100293365981';
 const GIVEAWAYS_ROLE_ID = '1428223579316687029';
 let isStartingDaily = false;
 
 
 /**
- * Đọc danh sách Giveaways từ file
+ * Đọc danh sách Giveaways từ file (Ưu tiên data/giveaways.json vĩnh viễn)
  */
 function loadGiveaways() {
   try {
-    if (!fs.existsSync(giveawaysFile)) {
-      fs.writeFileSync(giveawaysFile, '[]', 'utf8');
-      return [];
+    // 1. Kiểm tra file vĩnh viễn trong data/
+    if (fs.existsSync(persistentGiveawaysFile)) {
+      const raw = fs.readFileSync(persistentGiveawaysFile, 'utf8');
+      const data = JSON.parse(raw);
+      if (Array.isArray(data) && data.length > 0) return data;
     }
-    const data = JSON.parse(fs.readFileSync(giveawaysFile, 'utf8'));
-    return Array.isArray(data) ? data : [];
+
+    // 2. Kiểm tra bản sao lưu backup trong data/
+    if (fs.existsSync(backupGiveawaysFile)) {
+      const raw = fs.readFileSync(backupGiveawaysFile, 'utf8');
+      const data = JSON.parse(raw);
+      if (Array.isArray(data) && data.length > 0) return data;
+    }
+
+    // 3. Fallback: Di chuyển dữ liệu từ src/giveaways.json sang data/
+    if (fs.existsSync(legacyGiveawaysFile)) {
+      const raw = fs.readFileSync(legacyGiveawaysFile, 'utf8');
+      const data = JSON.parse(raw);
+      if (Array.isArray(data)) {
+        saveGiveaways(data);
+        return data;
+      }
+    }
+
+    saveGiveaways([]);
+    return [];
   } catch (err) {
     console.error('Lỗi khi đọc giveaways.json:', err);
     return [];
@@ -26,13 +55,25 @@ function loadGiveaways() {
 }
 
 /**
- * Lưu danh sách Giveaways vào file
+ * Lưu danh sách Giveaways vào file (Đồng thời lưu cả file chính, backup và legacy)
  */
 function saveGiveaways(list) {
   try {
-    const tempFile = `${giveawaysFile}.tmp`;
-    fs.writeFileSync(tempFile, JSON.stringify(list, null, 2), 'utf8');
-    fs.renameSync(tempFile, giveawaysFile);
+    if (!Array.isArray(list)) list = [];
+    const content = JSON.stringify(list, null, 2);
+
+    // Lưu vào data/giveaways.json
+    const tempFile = `${persistentGiveawaysFile}.tmp`;
+    fs.writeFileSync(tempFile, content, 'utf8');
+    fs.renameSync(tempFile, persistentGiveawaysFile);
+
+    // Lưu bản sao lưu backup data/giveaways.bak.json
+    fs.writeFileSync(backupGiveawaysFile, content, 'utf8');
+
+    // Đồng bộ vào legacy src/giveaways.json để tương thích
+    try {
+      fs.writeFileSync(legacyGiveawaysFile, content, 'utf8');
+    } catch (_) {}
   } catch (err) {
     console.error('Lỗi khi lưu giveaways.json:', err);
   }

@@ -27,3 +27,7 @@ backups/
 # Payment Ledger
 .payment-ledger.json
 .payment-ledger.json.tmp
+
+# Persistent Data / Giveaways
+data/
+*.bak.json

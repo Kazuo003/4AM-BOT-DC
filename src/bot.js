@@ -2247,7 +2247,7 @@ client.on('messageCreate', async (message) => {
       const { exec } = require('child_process');
       const rep = await message.reply('🔄 Đang đồng bộ code mới nhất từ GitHub và khởi động lại bot...').catch(() => null);
       const rootDir = path.resolve(__dirname, '..');
-      exec('git checkout -- src/giveaways.json src/autoResponses.json && git pull origin main', { cwd: rootDir }, (err, stdout, stderr) => {
+      exec('git checkout -- src/autoResponses.json && git pull origin main', { cwd: rootDir }, (err, stdout, stderr) => {
         const out = stdout || stderr || '';
         if (rep) {
           rep.edit(err ? `❌ Lỗi git pull:\n\`\`\`${err.message}\`\`\`` : `✅ Đồng bộ thành công!\n\`\`\`${out}\`\`\`\n🔄 Đang khởi động lại Bot...`).catch(() => {});

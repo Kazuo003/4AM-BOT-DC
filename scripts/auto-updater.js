@@ -57,7 +57,7 @@ async function checkAndUpdate() {
     }
 
     try {
-      run('git checkout -- src/giveaways.json src/autoResponses.json');
+      run('git checkout -- src/autoResponses.json');
     } catch (_) {}
 
     let pullOutput;
