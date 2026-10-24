@@ -61,6 +61,10 @@ const {
   initGiveawayScheduler
 } = require('./giveawayManager');
 
+const { translateText, isProbablyVietnamese } = require('./translator');
+const ticketTargetLangMap = new Map();
+const ticketTranslateDisabledSet = new Set();
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -1474,9 +1478,13 @@ function buildTicketMessage() {
   const btnLabel = langConf.buttonLabel || '🎟️ Mở Ticket Hỗ Trợ';
   const actionRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('create_general_ticket')
+      .setCustomId('create_general_ticket|vi')
       .setLabel(btnLabel)
-      .setStyle(ButtonStyle.Success)
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('create_general_ticket|en')
+      .setLabel('🌐 Order Here (English / Global)')
+      .setStyle(ButtonStyle.Primary)
   );
 
   return { embeds: [embed], components: [actionRow] };
@@ -2143,79 +2151,128 @@ client.once('ready', async () => {
 // ==========================================
 // OWO DELIVERY GUIDE PAYLOAD HELPER
 // ==========================================
-function getOwoGuidePayload(tab = 'menu') {
+function getOwoGuidePayload(tab = 'menu', lang = 'vi') {
   const embed = new EmbedBuilder().setColor(0x00C2A8);
+  const isEn = lang === 'en';
 
-  if (tab === 'c1') {
-    embed.setTitle('CÁCH 1: NHẬN TẠI SERVER MLTN (NHANH NHẤT)')
-      .setDescription(
-        `• **Bước 1:** Tham gia server MLTN: https://discord.gg/PGKygsUGps\n` +
-        `• **Bước 2:** Gửi thông tin vào ticket theo cú pháp:\n` +
-        `\`\`\`\nID hoặc Username | Số lượng Cow\n\`\`\`\n` +
-        `*(Ví dụ: \`895890393806274570 | 5m\` hoặc \`fouram_shop | 2m\`)*`
-      );
-  } else if (tab === 'c2') {
-    embed.setTitle('CÁCH 2: MỜI BOT COW DELIVERY VÀO SERVER (NHANH TƯƠNG ĐƯƠNG CÁCH 1)')
-      .setDescription(
-        `• **Bước 1:** Thêm Bot vào server qua link:\n` +
-        `https://discord.com/oauth2/authorize?client_id=1561626124574785567&scope=bot+applications.commands&permissions=2147879937\n` +
-        `• **Bước 2:** Cấp quyền cho Bot xem kênh, gửi tin nhắn và dùng lệnh slash.\n` +
-        `• **Bước 3:** Gửi thông tin vào ticket theo cú pháp:\n` +
-        `\`\`\`\nID Server | ID Kênh | ID hoặc Username | Số lượng Cow\n\`\`\`\n` +
-        `*(Ví dụ: \`1369824487524143154 | 1513357276256403558 | 895890393806274570 | 5m\`)*`
-      );
-  } else if (tab === 'c3') {
-    embed.setTitle('CÁCH 3: STAFF JOIN TRỰC TIẾP SERVER CỦA BẠN (SẼ ĐỢI LÂU NHẤT)')
-      .setDescription(
-        `• Gửi thông tin vào ticket theo cú pháp:\n` +
-        `\`\`\`\nLink Server (Vĩnh viễn) | ID hoặc Username | Số lượng Cow\n\`\`\`\n` +
-        `*(Ví dụ: \`https://discord.gg/fouram | fouram_shop | 5m\`)*\n\n` +
-        `*(Lưu ý: Cách này phụ thuộc vào thời gian Staff trực tiếp online nên sẽ đợi lâu nhất).*`
-      );
-  } else if (tab === 'note') {
-    embed.setTitle('LƯU Ý QUAN TRỌNG KHI GIAO DỊCH OWO — 4AM STORE')
-      .setDescription(
-        `• **Nếu dùng Cách 2 hoặc Cách 3:**\n` +
-        `  - Vui lòng **tắt xác minh số điện thoại (Verify Phone)** của Server.\n` +
-        `  - Nếu server có Bot verify người thật (Captcha, reaction role...), hãy **để 1 kênh public (công khai)** cho Bot/Staff bên mình vào chat gửi lệnh mà không bị chặn (vì hệ thống bên mình không thể tự bấm verify được).\n` +
-        `• **Cú pháp:** Vui lòng gửi đúng cú pháp (có dấu gạch đứng \`|\`) để hệ thống / Staff xử lý nhanh nhất.\n` +
-        `• Sau khi gửi thông tin, vui lòng đợi trong giây lát, Shop sẽ xử lý và chuyển Cow ngay cho bạn! Cảm ơn bạn đã tin tưởng 4AM STORE!`
-      );
+  if (isEn) {
+    if (tab === 'c1') {
+      embed.setTitle('METHOD 1: RECEIVE AT MLTN SERVER (FASTEST)')
+        .setDescription(
+          `• **Step 1:** Join MLTN server: https://discord.gg/PGKygsUGps\n` +
+          `• **Step 2:** Send your info in ticket using this syntax:\n` +
+          `\`\`\`\nUser ID or Username | Cow Amount\n\`\`\`\n` +
+          `*(Example: \`895890393806274570 | 5m\` or \`fouram_shop | 2m\`)*`
+        );
+    } else if (tab === 'c2') {
+      embed.setTitle('METHOD 2: INVITE COW DELIVERY BOT TO YOUR SERVER')
+        .setDescription(
+          `• **Step 1:** Invite the bot to your server via link:\n` +
+          `https://discord.com/oauth2/authorize?client_id=1561626124574785567&scope=bot+applications.commands&permissions=2147879937\n` +
+          `• **Step 2:** Grant bot permissions to view channel, send messages, and use slash commands.\n` +
+          `• **Step 3:** Send your info in ticket using this syntax:\n` +
+          `\`\`\`\nServer ID | Channel ID | User ID or Username | Cow Amount\n\`\`\`\n` +
+          `*(Example: \`1369824487524143154 | 1513357276256403558 | 895890393806274570 | 5m\`)*`
+        );
+    } else if (tab === 'c3') {
+      embed.setTitle('METHOD 3: STAFF JOINS YOUR SERVER (SLOWEST)')
+        .setDescription(
+          `• Send your info in ticket using this syntax:\n` +
+          `\`\`\`\nPermanent Server Invite Link | User ID or Username | Cow Amount\n\`\`\`\n` +
+          `*(Example: \`https://discord.gg/fouram | fouram_shop | 5m\`)*\n\n` +
+          `*(Note: This method depends on when staff is online to join manually, so it has the longest wait time).*`
+        );
+    } else if (tab === 'note') {
+      embed.setTitle('IMPORTANT NOTES FOR OWO TRADING — 4AM STORE')
+        .setDescription(
+          `• **If using Method 2 or 3:**\n` +
+          `  - Please **turn off Server Phone Verification**.\n` +
+          `  - If your server uses a Captcha/verification bot, please **create 1 public channel** so our bot/staff can type without being blocked.\n` +
+          `• **Syntax:** Please send the exact syntax with the vertical bar \`|\` for fastest delivery.\n` +
+          `• Once submitted, please wait a moment, we will deliver your Cow right away! Thank you for choosing 4AM STORE!`
+        );
+    } else {
+      embed.setTitle('OWO COW DELIVERY GUIDE — 4AM STORE')
+        .setDescription(
+          `Please click one of the buttons below to view details and required syntax:\n\n` +
+          `• **Method 1: Server MLTN** — Fastest\n` +
+          `• **Method 2: Bot Delivery** — Same speed as Method 1\n` +
+          `• **Method 3: Staff Join Server** — Manual, longest wait time\n\n` +
+          `*(Please read the **Notes** section before sending details).*`
+        );
+    }
   } else {
-    // Menu chính / Home
-    embed.setTitle('HƯỚNG DẪN GIAO DỊCH OWO / NHẬN COW — 4AM STORE')
-      .setDescription(
-        `Vui lòng chọn 1 trong các nút bên dưới để xem chi tiết và cú pháp:\n\n` +
-        `• **Cách 1: Server MLTN** — Nhanh nhất\n` +
-        `• **Cách 2: Bot Delivery** — Nhanh tương đương Cách 1\n` +
-        `• **Cách 3: Staff Join Server** — Thủ công, sẽ đợi lâu nhất\n\n` +
-        `*(Khuyến khích đọc kỹ mục **Lưu ý** trước khi gửi thông tin).*`
-      );
+    if (tab === 'c1') {
+      embed.setTitle('CÁCH 1: NHẬN TẠI SERVER MLTN (NHANH NHẤT)')
+        .setDescription(
+          `• **Bước 1:** Tham gia server MLTN: https://discord.gg/PGKygsUGps\n` +
+          `• **Bước 2:** Gửi thông tin vào ticket theo cú pháp:\n` +
+          `\`\`\`\nID hoặc Username | Số lượng Cow\n\`\`\`\n` +
+          `*(Ví dụ: \`895890393806274570 | 5m\` hoặc \`fouram_shop | 2m\`)*`
+        );
+    } else if (tab === 'c2') {
+      embed.setTitle('CÁCH 2: MỜI BOT COW DELIVERY VÀO SERVER (NHANH TƯƠNG ĐƯƠNG CÁCH 1)')
+        .setDescription(
+          `• **Bước 1:** Thêm Bot vào server qua link:\n` +
+          `https://discord.com/oauth2/authorize?client_id=1561626124574785567&scope=bot+applications.commands&permissions=2147879937\n` +
+          `• **Bước 2:** Cấp quyền cho Bot xem kênh, gửi tin nhắn và dùng lệnh slash.\n` +
+          `• **Bước 3:** Gửi thông tin vào ticket theo cú pháp:\n` +
+          `\`\`\`\nID Server | ID Kênh | ID hoặc Username | Số lượng Cow\n\`\`\`\n` +
+          `*(Ví dụ: \`1369824487524143154 | 1513357276256403558 | 895890393806274570 | 5m\`)*`
+        );
+    } else if (tab === 'c3') {
+      embed.setTitle('CÁCH 3: STAFF JOIN TRỰC TIẾP SERVER CỦA BẠN (SẼ ĐỢI LÂU NHẤT)')
+        .setDescription(
+          `• Gửi thông tin vào ticket theo cú pháp:\n` +
+          `\`\`\`\nLink Server (Vĩnh viễn) | ID hoặc Username | Số lượng Cow\n\`\`\`\n` +
+          `*(Ví dụ: \`https://discord.gg/fouram | fouram_shop | 5m\`)*\n\n` +
+          `*(Lưu ý: Cách này phụ thuộc vào thời gian Staff trực tiếp online nên sẽ đợi lâu nhất).*`
+        );
+    } else if (tab === 'note') {
+      embed.setTitle('LƯU Ý QUAN TRỌNG KHI GIAO DỊCH OWO — 4AM STORE')
+        .setDescription(
+          `• **Nếu dùng Cách 2 hoặc Cách 3:**\n` +
+          `  - Vui lòng **tắt xác minh số điện thoại (Verify Phone)** của Server.\n` +
+          `  - Nếu server có Bot verify người thật (Captcha, reaction role...), hãy **để 1 kênh public (công khai)** cho Bot/Staff bên mình vào chat gửi lệnh mà không bị chặn (vì hệ thống bên mình không thể tự bấm verify được).\n` +
+          `• **Cú pháp:** Vui lòng gửi đúng cú pháp (có dấu gạch đứng \`|\`) để hệ thống / Staff xử lý nhanh nhất.\n` +
+          `• Sau khi gửi thông tin, vui lòng đợi trong giây lát, Shop sẽ xử lý và chuyển Cow ngay cho bạn! Cảm ơn bạn đã tin tưởng 4AM STORE!`
+        );
+    } else {
+      embed.setTitle('HƯỚNG DẪN GIAO DỊCH OWO / NHẬN COW — 4AM STORE')
+        .setDescription(
+          `Vui lòng chọn 1 trong các nút bên dưới để xem chi tiết và cú pháp:\n\n` +
+          `• **Cách 1: Server MLTN** — Nhanh nhất\n` +
+          `• **Cách 2: Bot Delivery** — Nhanh tương đương Cách 1\n` +
+          `• **Cách 3: Staff Join Server** — Thủ công, sẽ đợi lâu nhất\n\n` +
+          `*(Khuyến khích đọc kỹ mục **Lưu ý** trước khi gửi thông tin).*`
+        );
+    }
   }
 
+  const langTag = isEn ? '|en' : '|vi';
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('owo_guide_c1')
+      .setCustomId(`owo_guide_c1${langTag}`)
       .setLabel('1')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(tab === 'c1'),
     new ButtonBuilder()
-      .setCustomId('owo_guide_c2')
+      .setCustomId(`owo_guide_c2${langTag}`)
       .setLabel('2')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(tab === 'c2'),
     new ButtonBuilder()
-      .setCustomId('owo_guide_c3')
+      .setCustomId(`owo_guide_c3${langTag}`)
       .setLabel('3')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(tab === 'c3'),
     new ButtonBuilder()
-      .setCustomId('owo_guide_note')
-      .setLabel('Lưu ý')
+      .setCustomId(`owo_guide_note${langTag}`)
+      .setLabel(isEn ? 'Notes' : 'Lưu ý')
       .setStyle(ButtonStyle.Danger)
       .setDisabled(tab === 'note'),
     new ButtonBuilder()
-      .setCustomId('owo_guide_menu')
+      .setCustomId(`owo_guide_menu${langTag}`)
       .setLabel('Home')
       .setStyle(ButtonStyle.Success)
       .setDisabled(tab === 'menu')
@@ -2257,6 +2314,73 @@ client.on('messageCreate', async (message) => {
         }, 1500);
       });
       return;
+    }
+
+    // ------------------------------------------
+    // TỰ ĐỘNG DỊCH HAI CHIỀU TRONG TICKET QUỐC TẾ
+    // ------------------------------------------
+    if (await isTicketChannel(message.channel, message.author)) {
+      const chName = (message.channel.name || '').toLowerCase();
+      const isEnTicket = chName.includes('-en-') || ticketTargetLangMap.has(message.channel.id);
+      const isTranslateDisabled = ticketTranslateDisabledSet.has(message.channel.id);
+
+      // Lệnh tắt bật dịch thủ công trong ticket
+      if (lower === '!tr on' || lower === '!translate on') {
+        ticketTranslateDisabledSet.delete(message.channel.id);
+        if (!ticketTargetLangMap.has(message.channel.id)) ticketTargetLangMap.set(message.channel.id, 'en');
+        await message.reply('🌐 **Tự động dịch hai chiều: ĐÃ BẬT.**\n• Khách nhắn ngoại ngữ ➔ Bot dịch sang tiếng Việt cho Staff.\n• Staff nhắn tiếng Việt ➔ Bot dịch sang tiếng Anh cho khách.').catch(() => {});
+        return;
+      }
+
+      if (lower === '!tr off' || lower === '!translate off') {
+        ticketTranslateDisabledSet.add(message.channel.id);
+        await message.reply('🔕 **Tự động dịch: ĐÃ TẮT cho ticket này.**').catch(() => {});
+        return;
+      }
+
+      if (lower.startsWith('!lang ')) {
+        const langCode = lower.replace('!lang ', '').trim().toLowerCase();
+        if (langCode && langCode.length >= 2 && langCode.length <= 5) {
+          ticketTranslateDisabledSet.delete(message.channel.id);
+          ticketTargetLangMap.set(message.channel.id, langCode);
+          await message.reply(`🌐 **Ngôn ngữ mục tiêu của Ticket đã đổi thành:** \`${langCode.toUpperCase()}\`.\n(Bot sẽ tự động dịch hai chiều giữa Tiếng Việt và ${langCode.toUpperCase()})`).catch(() => {});
+          return;
+        }
+      }
+
+      // Tự động dịch hai chiều
+      if (isEnTicket && !isTranslateDisabled) {
+        const isCommand = trimmed.startsWith('!') || trimmed.startsWith('/') || trimmed.startsWith('4am') || trimmed.startsWith('tos') || trimmed.startsWith('stk');
+        const hasLetters = /[a-zA-ZÀ-ỹ]/.test(trimmed);
+        const isUrl = /^https?:\/\//i.test(trimmed);
+        const isIdPipeSyntax = /^\d{16,20}\s*\|/i.test(trimmed);
+
+        if (!isCommand && hasLetters && !isUrl && !isIdPipeSyntax && trimmed.length >= 2) {
+          const targetLang = ticketTargetLangMap.get(message.channel.id) || 'en';
+          const isVN = isProbablyVietnamese(trimmed);
+          const isStaff = await isStaffMember({ guild: message.guild, user: message.author });
+
+          if (isStaff && isVN) {
+            // Staff nhắn tiếng Việt -> Dịch sang ngoại ngữ cho khách
+            const translated = await translateText(trimmed, 'vi', targetLang);
+            if (translated && translated.toLowerCase() !== trimmed.toLowerCase()) {
+              await message.reply({
+                content: `🌐 **[${targetLang.toUpperCase()}]:** *${translated}*`,
+                allowedMentions: { repliedUser: false }
+              }).catch(() => {});
+            }
+          } else if (!isStaff && !isVN) {
+            // Khách nhắn ngoại ngữ -> Dịch sang tiếng Việt cho Staff
+            const translated = await translateText(trimmed, 'auto', 'vi');
+            if (translated && translated.toLowerCase() !== trimmed.toLowerCase()) {
+              await message.reply({
+                content: `🇻🇳 **[Dịch]:** *${translated}*`,
+                allowedMentions: { repliedUser: false }
+              }).catch(() => {});
+            }
+          }
+        }
+      }
     }
 
     // Lệnh nhanh trong Ticket / Kênh riêng: /add @user hoặc !add @user
@@ -2374,7 +2498,9 @@ client.on('messageCreate', async (message) => {
 
     const payload = {};
     if (matched.id === 'gdowo4am') {
-      const owoPayload = getOwoGuidePayload('menu');
+      const chName = (message.channel.name || '').toLowerCase();
+      const isEn = chName.includes('-en-') || lower.includes(' 4amowo en') || lower.endsWith(' en');
+      const owoPayload = getOwoGuidePayload('menu', isEn ? 'en' : 'vi');
       if (owoPayload.content) payload.content = owoPayload.content;
       if (owoPayload.embeds) payload.embeds = owoPayload.embeds;
       payload.components = owoPayload.components;
@@ -2436,9 +2562,27 @@ client.on('interactionCreate', async (i) => {
   try {
   // --- OwO Cow Delivery Guide Buttons ---
   if (i.isButton() && i.customId.startsWith('owo_guide_')) {
-    const tab = i.customId.replace('owo_guide_', '');
-    const owoPayload = getOwoGuidePayload(tab);
+    const raw = i.customId.replace('owo_guide_', '');
+    const parts = raw.split('|');
+    const tab = parts[0] || 'menu';
+    const lang = parts[1] || 'vi';
+    const owoPayload = getOwoGuidePayload(tab, lang);
     await i.update(owoPayload).catch(() => {});
+    return;
+  }
+
+  // --- Toggle Ticket Auto-Translate Button ---
+  if (i.isButton() && i.customId === 'toggle_ticket_translate') {
+    const chId = i.channel.id;
+    const isDisabled = ticketTranslateDisabledSet.has(chId);
+    if (isDisabled) {
+      ticketTranslateDisabledSet.delete(chId);
+      if (!ticketTargetLangMap.has(chId)) ticketTargetLangMap.set(chId, 'en');
+      await i.reply({ content: '🌐 **Đã BẬT tự động dịch hai chiều cho ticket này.** (Staff chat tiếng Việt -> Khách đọc tiếng Anh; Khách chat tiếng nước ngoài -> Staff đọc tiếng Việt)', ephemeral: false }).catch(() => {});
+    } else {
+      ticketTranslateDisabledSet.add(chId);
+      await i.reply({ content: '🔕 **Đã TẮT tự động dịch cho ticket này.**', ephemeral: false }).catch(() => {});
+    }
     return;
   }
 
@@ -2532,12 +2676,17 @@ client.on('interactionCreate', async (i) => {
       catEmbed.setImage(cat.bannerUrl.trim());
     }
 
-    const buyButton = new ButtonBuilder()
-      .setCustomId(`create_ticket_from_menu|${selectedKey}`)
-      .setLabel(`🎟️ Mở Ticket mua ${cat.label}`)
+    const buyButtonVi = new ButtonBuilder()
+      .setCustomId(`create_ticket_from_menu|${selectedKey}|vi`)
+      .setLabel(`🎟️ Mua ${cat.label}`)
+      .setStyle(ButtonStyle.Success);
+
+    const buyButtonEn = new ButtonBuilder()
+      .setCustomId(`create_ticket_from_menu|${selectedKey}|en`)
+      .setLabel(`🌐 Order (English)`)
       .setStyle(ButtonStyle.Primary);
 
-    const buttonRow = new ActionRowBuilder().addComponents(buyButton);
+    const buttonRow = new ActionRowBuilder().addComponents(buyButtonVi, buyButtonEn);
 
     return i.reply({ embeds: [catEmbed], components: [buttonRow], ephemeral: true });
   }
@@ -2547,6 +2696,7 @@ client.on('interactionCreate', async (i) => {
     const parts = i.customId.split('|');
     const categoryKey = parts[1];
     const lang = parts[2] || 'vi';
+    const isEn = lang === 'en';
     const data = getMenuData();
     const cat = data.categories?.[categoryKey] || { label: 'Dịch vụ', color: 0x5865F2 };
 
@@ -2559,7 +2709,9 @@ client.on('interactionCreate', async (i) => {
       const gate = canOpenTicket(i.user.id);
       if (!gate.ok) {
         return i.reply({
-          content: `⏳ Bạn vui lòng chờ thêm **${gate.waitMin} phút** trước khi tạo ticket tiếp theo. (Giới hạn: ${TICKET_COOLDOWN_MIN} phút)`,
+          content: isEn 
+            ? `⏳ Please wait **${gate.waitMin} minutes** before opening another ticket. (Cooldown: ${TICKET_COOLDOWN_MIN} mins)`
+            : `⏳ Bạn vui lòng chờ thêm **${gate.waitMin} phút** trước khi tạo ticket tiếp theo. (Giới hạn: ${TICKET_COOLDOWN_MIN} phút)`,
           ephemeral: true
         });
       }
@@ -2599,7 +2751,8 @@ client.on('interactionCreate', async (i) => {
     }
 
     const cleanKey = String(categoryKey).toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    const channelName = `ticket-${cleanKey}-${orderDraftNo}`.toLowerCase();
+    const channelPrefix = isEn ? 'ticket-en' : 'ticket';
+    const channelName = `${channelPrefix}-${cleanKey}-${orderDraftNo}`.toLowerCase();
     let ticketChannel = null;
     try {
       ticketChannel = await guild.channels.create({
@@ -2654,25 +2807,27 @@ client.on('interactionCreate', async (i) => {
     let supportMsg = '';
     if (allHandlerIds.length > 1) {
       const tags = allHandlerIds.map(h => `<@${h}>`).join(' & ');
-      supportMsg = `👥 Người phụ trách hỗ trợ: ${tags} sẽ trực tiếp hỗ trợ bạn đơn hàng này.`;
+      supportMsg = isEn ? `👥 Support team: ${tags} will assist you directly.` : `👥 Người phụ trách hỗ trợ: ${tags} sẽ trực tiếp hỗ trợ bạn đơn hàng này.`;
     } else if (allHandlerIds.length === 1) {
-      supportMsg = `👤 Người bán phụ trách: <@${allHandlerIds[0]}> sẽ trực tiếp hỗ trợ bạn đơn hàng này.`;
+      supportMsg = isEn ? `👤 Seller in charge: <@${allHandlerIds[0]}> will assist you directly.` : `👤 Người bán phụ trách: <@${allHandlerIds[0]}> sẽ trực tiếp hỗ trợ bạn đơn hàng này.`;
     } else if (staffRoleId) {
-      supportMsg = `Nhân viên hỗ trợ <@&${staffRoleId}> sẽ có mặt ngay để tư vấn cho bạn.`;
+      supportMsg = isEn ? `Support staff <@&${staffRoleId}> will be with you shortly.` : `Nhân viên hỗ trợ <@&${staffRoleId}> sẽ có mặt ngay để tư vấn cho bạn.`;
     }
 
     const welcomeEmbed = new EmbedBuilder()
-      .setTitle(`🎟️ TICKET MUA HÀNG — ${cat.label.toUpperCase()}`)
+      .setTitle(isEn ? `🎟️ ORDER TICKET — ${cat.label.toUpperCase()}` : `🎟️ TICKET MUA HÀNG — ${cat.label.toUpperCase()}`)
       .setDescription([
-        `Xin chào <@${i.user.id}>! Cảm ơn bạn đã quan tâm đến **${cat.label}** tại **${data.storeName || '4AM STORE'}**.`,
+        isEn ? `Hello <@${i.user.id}>! Thank you for choosing **${cat.label}** at **${data.storeName || '4AM STORE'}**.` : `Xin chào <@${i.user.id}>! Cảm ơn bạn đã quan tâm đến **${cat.label}** tại **${data.storeName || '4AM STORE'}**.`,
         supportMsg,
         '',
-        `📦 **Dịch vụ quan tâm:** **${cat.label}**`,
+        `📦 **${isEn ? 'Selected Service' : 'Dịch vụ quan tâm'}:** **${cat.label}**`,
         '',
-        '👉 **Vui lòng chọn loại gói bạn muốn mua (hoặc chọn "Cần tư vấn") ở menu bên dưới:**'
+        isEn 
+          ? `💬 **Real-time Auto-Translate is ACTIVE in this ticket.** You can speak English, French, Spanish, Russian, or any language, and our bot will automatically translate for staff in real-time!\n\n👉 **Please select your package below or tell us what you need in chat:**`
+          : '👉 **Vui lòng chọn loại gói bạn muốn mua (hoặc chọn "Cần tư vấn") ở menu bên dưới:**'
       ].filter(Boolean).join('\n'))
       .setColor(cat.color || 0x00C2A8)
-      .setFooter({ text: '4AM Shop • Hỗ trợ 24/7' })
+      .setFooter({ text: isEn ? '4AM Shop • 24/7 Global Support' : '4AM Shop • Hỗ trợ 24/7' })
       .setTimestamp();
 
     const mentions = [`<@${i.user.id}>`];
@@ -2688,17 +2843,33 @@ client.on('interactionCreate', async (i) => {
 
     const itemPrompt = buildCategoryItemPrompt(cat, categoryKey, orderDraftNo);
     const ticketActionRow = buildTicketActionRow(orderDraftNo, categoryKey, true);
+    const ticketComponents = [itemPrompt.row, ticketActionRow];
+    if (isEn) {
+      ticketTargetLangMap.set(ticketChannel.id, 'en');
+      const intlRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`toggle_ticket_translate|${ticketChannel.id}`)
+          .setLabel('🌐 Auto-Translate: ON')
+          .setStyle(ButtonStyle.Secondary)
+      );
+      ticketComponents.push(intlRow);
+    }
+
     await ticketChannel.send({
       content: mentions.join(' '),
       embeds: [welcomeEmbed],
-      components: [itemPrompt.row, ticketActionRow]
+      components: ticketComponents
     });
 
-    return i.editReply({ content: `✅ Đã tạo Ticket hỗ trợ mua **${cat.label}** tại: <#${ticketChannel.id}>` });
+    return i.editReply({ content: isEn ? `✅ Created order ticket for **${cat.label}** at: <#${ticketChannel.id}>` : `✅ Đã tạo Ticket hỗ trợ mua **${cat.label}** tại: <#${ticketChannel.id}>` });
   }
 
   // --- Create General Ticket (From Ticket Channel Panel) ---
   if (i.isButton() && i.customId.startsWith('create_general_ticket')) {
+    const parts = i.customId.split('|');
+    const lang = parts[1] || 'vi';
+    const isEn = lang === 'en';
+
     const data = getMenuData();
     const staffRoleId = process.env.STAFF_ROLE_ID;
     const member = await i.guild.members.fetch(i.user.id);
@@ -2709,7 +2880,9 @@ client.on('interactionCreate', async (i) => {
       const gate = canOpenTicket(i.user.id);
       if (!gate.ok) {
         return i.reply({
-          content: `⏳ Bạn vui lòng chờ thêm **${gate.waitMin} phút** trước khi tạo ticket tiếp theo. (Giới hạn: ${TICKET_COOLDOWN_MIN} phút)`,
+          content: isEn
+            ? `⏳ Please wait **${gate.waitMin} minutes** before opening another ticket. (Cooldown: ${TICKET_COOLDOWN_MIN} mins)`
+            : `⏳ Bạn vui lòng chờ thêm **${gate.waitMin} phút** trước khi tạo ticket tiếp theo. (Giới hạn: ${TICKET_COOLDOWN_MIN} phút)`,
           ephemeral: true
         });
       }
@@ -2746,7 +2919,7 @@ client.on('interactionCreate', async (i) => {
     const tp = data.ticketPanel || {};
     const langConf = tp.vi || {};
     const storeName = data.storeName || '4AM STORE';
-    const prefix = (tp.ticketPrefix || 'ticket-support').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+    const prefix = isEn ? 'ticket-en-support' : (tp.ticketPrefix || 'ticket-support').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
 
     let ticketChannel = null;
     try {
@@ -2755,11 +2928,18 @@ client.on('interactionCreate', async (i) => {
         type: ChannelType.GuildText,
         parent: ticketCategoryId ?? undefined,
         permissionOverwrites: overwrites,
-        reason: `Ticket hỗ trợ tạo bởi ${i.user.tag}`
+        reason: isEn ? `Global support/order ticket created by ${i.user.tag}` : `Ticket hỗ trợ tạo bởi ${i.user.tag}`
       });
     } catch (chErr) {
       console.error('Lỗi khi tạo kênh ticket tổng:', chErr);
-      return i.editReply({ content: '❌ Không thể tạo kênh ticket lúc này. Vui lòng liên hệ Admin!', ephemeral: true });
+      return i.editReply({ 
+        content: isEn ? '❌ Could not create ticket channel at this moment. Please contact Admin!' : '❌ Không thể tạo kênh ticket lúc này. Vui lòng liên hệ Admin!', 
+        ephemeral: true 
+      });
+    }
+
+    if (isEn) {
+      ticketTargetLangMap.set(ticketChannel.id, 'en');
     }
 
     if (!isStaff) markTicketOpened(i.user.id);
@@ -2770,16 +2950,16 @@ client.on('interactionCreate', async (i) => {
       const dbUser = await ensureUser(i.user.id, null, i.user.globalName || i.user.username, null);
       const dbProduct = await findOrCreateProduct({
         type: 'SUPPORT_TICKET',
-        name: 'Hỗ Trợ Khách Hàng',
-        sku: 'SUPPORT_GENERAL',
-        specJson: JSON.stringify({ type: 'support' }),
+        name: isEn ? 'Global Customer Support' : 'Hỗ Trợ Khách Hàng',
+        sku: isEn ? 'SUPPORT_GLOBAL' : 'SUPPORT_GENERAL',
+        specJson: JSON.stringify({ type: 'support', lang }),
         priceCents: 0,
         currency: 'VNĐ'
       });
       const planSnapshot = {
         isSupportTicket: true,
         categoryKey: 'support',
-        categoryLabel: 'Ticket Hỗ Trợ',
+        categoryLabel: isEn ? 'Global Support Ticket' : 'Ticket Hỗ Trợ',
         sellerId: defaultSeller?.id || 'admin',
         sellerName: defaultSeller?.username ? `@${defaultSeller.username}` : (defaultSeller?.name || 'Shop Admin'),
         handlers: sellerDiscordId ? [sellerDiscordId] : [],
@@ -2798,23 +2978,33 @@ client.on('interactionCreate', async (i) => {
       console.error('Lỗi khi tự động tạo ticket support trong DB:', orderErr);
     }
 
-    const welcomeTitle = (langConf.welcomeTitle || '🎟️ TICKET HỖ TRỢ — {storeName}').replace(/\{storeName\}/g, storeName);
-    const rawWelcomeMsg = langConf.welcomeMsg || 'Xin chào <@{userId}>! Cảm ơn bạn đã liên hệ với **{storeName}**.';
-    const welcomeMsg = rawWelcomeMsg.replace(/\{userId\}/g, i.user.id).replace(/\{user\}/g, `<@${i.user.id}>`).replace(/\{storeName\}/g, storeName);
-    const welcomeNote = langConf.welcomeNote || '💬 *Vui lòng gửi câu hỏi, yêu cầu bảo hành hoặc vấn đề cần hỗ trợ tại đây nhé!*';
+    let welcomeTitle = '';
+    let welcomeMsg = '';
+    let welcomeNote = '';
+
+    if (isEn) {
+      welcomeTitle = `🎟️ GLOBAL ORDER & SUPPORT TICKET — ${storeName}`;
+      welcomeMsg = `Hello <@${i.user.id}>! Welcome to **${storeName}**.`;
+      welcomeNote = `💬 **Real-time Auto-Translate is ACTIVE in this ticket.**\nYou can freely type in English, French, Spanish, Russian, Chinese, or any language you speak! Our bot will translate your messages into Vietnamese for staff in real-time, and automatically translate staff responses back to you.\n\n👉 *Please send your order request, questions, or product details below to get started!*`;
+    } else {
+      welcomeTitle = (langConf.welcomeTitle || '🎟️ TICKET HỖ TRỢ — {storeName}').replace(/\{storeName\}/g, storeName);
+      const rawWelcomeMsg = langConf.welcomeMsg || 'Xin chào <@{userId}>! Cảm ơn bạn đã liên hệ với **{storeName}**.';
+      welcomeMsg = rawWelcomeMsg.replace(/\{userId\}/g, i.user.id).replace(/\{user\}/g, `<@${i.user.id}>`).replace(/\{storeName\}/g, storeName);
+      welcomeNote = langConf.welcomeNote || '💬 *Vui lòng gửi câu hỏi, yêu cầu bảo hành hoặc vấn đề cần hỗ trợ tại đây nhé!*';
+    }
 
     const welcomeEmbed = new EmbedBuilder()
       .setTitle(welcomeTitle)
       .setDescription([
         welcomeMsg,
         sellerDiscordId
-          ? `Nhân viên phụ trách: <@${sellerDiscordId}> sẽ phản hồi bạn ngay.`
-          : (staffRoleId ? `Nhân viên hỗ trợ <@&${staffRoleId}> sẽ có mặt ngay để phục vụ bạn.` : ''),
+          ? (isEn ? `Assigned Staff: <@${sellerDiscordId}> will assist you shortly.` : `Nhân viên phụ trách: <@${sellerDiscordId}> sẽ phản hồi bạn ngay.`)
+          : (staffRoleId ? (isEn ? `Support staff <@&${staffRoleId}> will be with you shortly.` : `Nhân viên hỗ trợ <@&${staffRoleId}> sẽ có mặt ngay để phục vụ bạn.`) : ''),
         '',
         welcomeNote
       ].filter(Boolean).join('\n'))
-      .setColor(0x5865F2)
-      .setFooter({ text: `${storeName} • Hỗ trợ 24/7` })
+      .setColor(isEn ? 0x00C2A8 : 0x5865F2)
+      .setFooter({ text: isEn ? `${storeName} • 24/7 Global Support` : `${storeName} • Hỗ trợ 24/7` })
       .setTimestamp();
 
     const generalMentions = [`<@${i.user.id}>`];
@@ -2829,12 +3019,16 @@ client.on('interactionCreate', async (i) => {
     const supportActionRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`ping_staff_ticket|${orderDraftNo}`)
-        .setLabel('🔔 Gọi Staff')
+        .setLabel(isEn ? '🔔 Ping Staff' : '🔔 Gọi Staff')
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId(`close_support_ticket|${orderDraftNo}`)
-        .setLabel('🔒 Đóng Ticket')
-        .setStyle(ButtonStyle.Danger)
+        .setLabel(isEn ? '🔒 Close Ticket' : '🔒 Đóng Ticket')
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId(`toggle_ticket_translate|${ticketChannel.id}`)
+        .setLabel(isEn ? '🌐 Auto-Translate: ON' : '🌐 Dịch: BẬT')
+        .setStyle(ButtonStyle.Secondary)
     );
 
     await ticketChannel.send({
@@ -2843,7 +3037,11 @@ client.on('interactionCreate', async (i) => {
       components: [supportActionRow]
     });
 
-    return i.editReply({ content: `✅ Đã tạo Ticket hỗ trợ tại: <#${ticketChannel.id}>` });
+    return i.editReply({ 
+      content: isEn 
+        ? `✅ Created order & support ticket at: <#${ticketChannel.id}>` 
+        : `✅ Đã tạo Ticket hỗ trợ tại: <#${ticketChannel.id}>` 
+    });
   }
 
   // --- Nút Gọi Staff trong Ticket Hỗ Trợ ---
@@ -6724,83 +6922,16 @@ app.post('/api/save-and-sync', requireStoreConfigAuth, async (req, res) => {
   }
 });
 
-// Translation Helper with token masking. Technical Discord syntax and formatting
-// are restored byte-for-byte after translation.
-async function translateText(text, from = 'vi', to = 'en') {
-  if (!text || typeof text !== 'string' || !text.trim()) return text;
-  const tokens = [];
-  const tokenRegex = /(https?:\/\/[^\s]+|```[\s\S]*?```|`[^`]+`|\{[a-zA-Z0-9_]+\}|<@[!&]?\d+>|<#\d+>|<@&\d+>|<a?:[a-zA-Z0-9_~]+:\d+>|<t:\d+(?::[tTdDfFR])?>|<\/[a-zA-Z0-9_-]+:\d+>|\*\*|__|~~|\|\||(?<!\*)\*(?!\*)|(?<!_)_(?!_)|(?:\p{Extended_Pictographic}|\p{Emoji_Presentation}))/gu;
-  const tokenized = text.replace(tokenRegex, (match) => {
-    const placeholder = 'ZXQPH' + tokens.length + 'QXZ';
-    tokens.push({ placeholder, original: match });
-    return placeholder;
-  });
-
-  if (!/[a-zA-ZÀ-ỹ]/.test(tokenized)) {
-    return text;
-  }
-
-  return new Promise((resolve, reject) => {
-    const postData = querystring.stringify({
-      client: 'gtx',
-      sl: from,
-      tl: to,
-      dt: 't',
-      q: tokenized
-    });
-
-    const options = {
-      hostname: 'translate.googleapis.com',
-      path: '/translate_a/single?' + postData,
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-      }
-    };
-
-    const request = https.request(options, (response) => {
-      let data = '';
-      response.on('data', chunk => data += chunk);
-      response.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          let translated = (parsed[0] || []).map(item => item[0]).join('');
-          for (let i = 0; i < tokens.length; i++) {
-            const regex = new RegExp('ZXQPH' + i + 'QXZ', 'gi');
-            translated = translated.replace(regex, tokens[i].original);
-          }
-          // Translation services sometimes insert spaces immediately inside
-          // paired Markdown delimiters. Keep the Discord formatting valid.
-          translated = translated
-            .replace(/\*\*\s*([\s\S]*?)\s*\*\*/g, '**$1**')
-            .replace(/__\s*([\s\S]*?)\s*__/g, '__$1__')
-            .replace(/~~\s*([\s\S]*?)\s*~~/g, '~~$1~~')
-            .replace(/\|\|\s*([\s\S]*?)\s*\|\|/g, '||$1||')
-            .replace(/(?<!\*)\*\s*([^*\n]+?)\s*\*(?!\*)/g, '*$1*')
-            .replace(/(?<!_)_\s*([^_\n]+?)\s*_(?!_)/g, '_$1_');
-          const missingToken = tokens.some(token => !translated.includes(token.original));
-          if (missingToken) throw new Error('Bản dịch làm thay đổi placeholder hoặc định dạng Discord');
-          resolve(translated);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
-    request.setTimeout(10000, () => request.destroy(new Error('Dịch vụ dịch quá thời gian chờ')));
-    request.on('error', reject);
-  });
-}
-
 // Auto translate text / batch texts (VI -> EN or EN -> VI)
 app.post('/api/translate', requireAuth, async (req, res) => {
   try {
     const { text, texts, from = 'vi', to = 'en' } = req.body;
     if (Array.isArray(texts)) {
-      const results = await Promise.all(texts.map(t => translateText(t, from, to)));
+      const results = await Promise.all(texts.map(async (t) => (await translateText(t, from, to)) || t));
       return res.json({ ok: true, translations: results });
     }
     if (typeof text === 'string') {
-      const result = await translateText(text, from, to);
+      const result = (await translateText(text, from, to)) || text;
       return res.json({ ok: true, translation: result });
     }
     return res.status(400).json({ ok: false, error: 'Thiếu tham số text hoặc texts để dịch.' });

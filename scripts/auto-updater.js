@@ -49,10 +49,17 @@ async function checkAndUpdate() {
 
     // 4. Kéo code mới về (Tự động bảo toàn dữ liệu giveaways trên VPS)
     let savedGiveaways = null;
+    let savedDataGiveaways = null;
     const giveawaysPath = path.join(ROOT_DIR, 'src', 'giveaways.json');
+    const dataGiveawaysPath = path.join(ROOT_DIR, 'data', 'giveaways.json');
     if (fs.existsSync(giveawaysPath)) {
       try {
         savedGiveaways = fs.readFileSync(giveawaysPath, 'utf8');
+      } catch (_) {}
+    }
+    if (fs.existsSync(dataGiveawaysPath)) {
+      try {
+        savedDataGiveaways = fs.readFileSync(dataGiveawaysPath, 'utf8');
       } catch (_) {}
     }
 
@@ -68,6 +75,14 @@ async function checkAndUpdate() {
       log(`⚠️ Git pull gặp lỗi (${pullErr.message}), đang force reset về origin/main...`);
       pullOutput = run('git reset --hard origin/main');
       log(`📥 Git reset:\n${pullOutput}`);
+    }
+
+    // Bảo tồn dữ liệu data/giveaways.json trên VPS
+    if (savedDataGiveaways) {
+      try {
+        fs.mkdirSync(path.dirname(dataGiveawaysPath), { recursive: true });
+        fs.writeFileSync(dataGiveawaysPath, savedDataGiveaways, 'utf8');
+      } catch (_) {}
     }
 
     // Khôi phục và hợp nhất dữ liệu người tham gia giveaway từ runtime VPS
