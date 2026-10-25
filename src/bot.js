@@ -2582,26 +2582,26 @@ client.on('messageCreate', async (message) => {
         const isStaff = await isStaffMember(message);
         if (!isStaff) return;
         ticketTargetLangMap.clear();
-        ticketTranslateDisabledSet.clear();
+        ticketTranslateDisabledSet.add(message.channel.id);
         saveTicketLanguages();
-        await message.reply('🧹 **Đã đặt lại toàn bộ hệ thống dịch thuật!**\n• Tất cả các kênh thường, kênh đối tác và ticket nội địa đã được tắt dịch hoàn toàn.\n• Chỉ các ticket quốc tế (danh mục `FORIEGN TICKET` hoặc tên có `-en-`) mới có dịch tự động.').catch(() => {});
+        await message.reply('🧹 **Đã đặt lại hệ thống dịch thuật và ĐÃ TẮT DỊCH cho kênh này!**\n• Tất cả các kênh thường và kênh đối tác đã được làm sạch.\n• Muốn bật lại cho kênh này, chỉ cần gõ: `!tr on` hoặc `!lang en`.').catch(() => {});
         return;
       }
 
-      // Lệnh tắt bật dịch thủ công: !tr on / !tr off (hoặc !dich on / off)
-      if (lower === '!tr on' || lower === '!translate on' || lower === '!dich on') {
+      // Lệnh tắt bật dịch thủ công: hỗ trợ đầy đủ các biến thể !tr off, !dich off, !lang off, !tat, !tắt...
+      if (lower === '!tr on' || lower === '!translate on' || lower === '!dich on' || lower === '!lang on' || lower === '!lanh on' || lower === '!lag on' || lower === '!bat' || lower === '!batdich' || lower === '!bật') {
         ticketTranslateDisabledSet.delete(message.channel.id);
         if (!ticketTargetLangMap.has(message.channel.id)) ticketTargetLangMap.set(message.channel.id, 'en');
         saveTicketLanguages();
-        await message.reply('🌐 **Tự động dịch hai chiều: ĐÃ BẬT cho kênh này.**\n• Khách/Đối tác nhắn ngoại ngữ ➔ Bot dịch sang tiếng Việt cho Staff.\n• Staff nhắn tiếng Việt ➔ Bot dịch sang tiếng Anh cho khách.').catch(() => {});
+        await message.reply('🌐 **Tự động dịch hai chiều: ĐÃ BẬT cho kênh này.**\n• Khách/Đối tác nhắn ngoại ngữ ➔ Bot dịch sang tiếng Việt cho Staff.\n• Staff nhắn tiếng Việt ➔ Bot dịch sang tiếng Anh cho khách.\n• Muốn tắt bất kỳ lúc nào, chỉ cần gõ: `!tr off` hoặc `!tat`.').catch(() => {});
         return;
       }
 
-      if (lower === '!tr off' || lower === '!translate off' || lower === '!dich off') {
+      if (lower === '!tr off' || lower === '!translate off' || lower === '!dich off' || lower === '!lang off' || lower === '!lanh off' || lower === '!lag off' || lower === '!tat' || lower === '!tatdich' || lower === '!tắt' || lower === '!tat dich' || lower === '!tắt dịch') {
         ticketTranslateDisabledSet.add(message.channel.id);
         ticketTargetLangMap.delete(message.channel.id);
         saveTicketLanguages();
-        await message.reply('🔕 **Tự động dịch: ĐÃ TẮT cho kênh này.**').catch(() => {});
+        await message.reply('🔕 **Tự động dịch: ĐÃ TẮT cho kênh này.**\n• Muốn bật lại, chỉ cần gõ `!tr on` hoặc `!lang en`.').catch(() => {});
         return;
       }
 
