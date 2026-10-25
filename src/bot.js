@@ -69,7 +69,7 @@ const {
 } = require('./translator');
 const ticketTargetLangMap = new Map();
 const ticketTranslateDisabledSet = new Set();
-const TICKET_LANG_FILE = path.resolve(__dirname, 'ticketLanguages.json');
+const TICKET_LANG_FILE = path.resolve(__dirname, '..', 'data', 'ticketLanguages.json');
 
 function loadTicketLanguages() {
   try {
@@ -87,6 +87,10 @@ function loadTicketLanguages() {
 
 function saveTicketLanguages() {
   try {
+    const dataDir = path.dirname(TICKET_LANG_FILE);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
     const obj = {};
     for (const [k, v] of ticketTargetLangMap.entries()) {
       obj[k] = v;
@@ -96,6 +100,30 @@ function saveTicketLanguages() {
 }
 
 loadTicketLanguages();
+
+/**
+ * Xác định ngôn ngữ dịch mục tiêu của ticket (mặc định 'en' cho ticket quốc tế)
+ */
+function getTicketTargetLang(channel) {
+  if (!channel) return null;
+  // 1. Kiểm tra cache cấu hình từ map / file data
+  if (ticketTargetLangMap.has(channel.id)) {
+    return ticketTargetLangMap.get(channel.id);
+  }
+  // 2. Kênh có tiền tố / hậu tố -en- hoặc ticket-en
+  const name = (channel.name || '').toLowerCase();
+  if (name.includes('-en-') || name.startsWith('ticket-en') || name.endsWith('-en')) {
+    return 'en';
+  }
+  // 3. Category quốc tế: FORIEGN TICKET, FOREIGN TICKET, INTL, GLOBAL
+  if (channel.parent) {
+    const pName = (channel.parent.name || '').toLowerCase();
+    if (pName.includes('foriegn') || pName.includes('foreign') || pName.includes('intl') || pName.includes('global')) {
+      return 'en';
+    }
+  }
+  return null;
+}
 
 const client = new Client({
   intents: [
@@ -1801,34 +1829,31 @@ function isPrivateChannel(channel) {
   return false;
 }
 
-async function isTicketChannel(channel, actor = null) {
+async function isTicketChannel(channel) {
   if (!channel || !channel.guild || !channel.isTextBased()) return false;
 
-  // 1. Staff / Owner / Admin can use /add & /remove in any ticket, private customer channel, or channel they manage!
-  if (actor) {
-    const isStaff = await isStaffMember({ guild: channel.guild, user: actor });
-    if (isStaff) return true;
-  }
-
-  // 2. Any channel with ticket prefixes: ticket-, order-, closed-
+  // 1. Kênh có tiền tố ticket: ticket-, order-, closed-
   const name = (channel.name || '').toLowerCase();
   if (name.startsWith('ticket-') || name.startsWith('order-') || name.startsWith('closed-')) return true;
 
-  // 3. Any channel inside configured Ticket category
+  // 2. Kênh nằm trong Category có chứa chữ TICKET (VD: TICKET, FORIEGN TICKET, CLOSED TICKET)
+  if (channel.parent) {
+    const parentName = (channel.parent.name || '').toLowerCase();
+    if (parentName.includes('ticket')) return true;
+  }
+
+  // 3. Kênh nằm trong Ticket category cấu hình trong menuData
   try {
     const data = getMenuData();
     const ticketCatId = resolveTicketCategoryId(channel.guild, data);
     if (ticketCatId && channel.parentId === ticketCatId) return true;
   } catch (_) {}
 
-  // 4. Any ticket recorded in Database
+  // 4. Ticket được ghi nhận trong cơ sở dữ liệu Prisma
   try {
     const ticket = await prisma.ticket.findFirst({ where: { channelId: channel.id } }).catch(() => null);
     if (ticket) return true;
   } catch (_) {}
-
-  // 5. Any PRIVATE channel (kênh riêng tư của khách quen, đối tác, VIP: #rs-store, #toki, #hoang-chi-linh, etc.)
-  if (isPrivateChannel(channel)) return true;
 
   return false;
 }
@@ -1872,7 +1897,7 @@ async function canManageTicketMembers(channel, user) {
 }
 
 async function handleAddTicketMember(channel, actor, targetUser) {
-  const isEligible = await isTicketChannel(channel, actor);
+  const isEligible = (await isTicketChannel(channel)) || isPrivateChannel(channel);
   if (!isEligible) {
     return { ok: false, error: '❌ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket hoặc kênh riêng tư của khách!' };
   }
@@ -1924,7 +1949,7 @@ async function handleAddTicketMember(channel, actor, targetUser) {
 }
 
 async function handleRemoveTicketMember(channel, actor, targetUser) {
-  const isEligible = await isTicketChannel(channel, actor);
+  const isEligible = (await isTicketChannel(channel)) || isPrivateChannel(channel);
   if (!isEligible) {
     return { ok: false, error: '❌ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket hoặc kênh riêng tư của khách!' };
   }
@@ -2010,7 +2035,7 @@ async function handleRenameTicketChannel(channel, actor, newRawName) {
     return { ok: false, error: '❌ Không tìm thấy thông tin kênh.' };
   }
 
-  const isEligible = await isTicketChannel(channel, actor);
+  const isEligible = (await isTicketChannel(channel)) || isPrivateChannel(channel);
   if (!isEligible) {
     return { ok: false, error: '❌ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket hoặc kênh riêng tư của khách!' };
   }
@@ -2195,7 +2220,7 @@ async function handleQuickBill(channel, actor, { amountStr, note = '', targetUse
 
 async function handleSendFeedbackPrompt(channel, actor, { service = '', targetUser = null } = {}) {
   try {
-    const isTicket = await isTicketChannel(channel, actor);
+    const isTicket = (await isTicketChannel(channel)) || isPrivateChannel(channel);
     if (!isTicket) {
       return { ok: false, error: '⚠️ Lệnh này chỉ có thể sử dụng bên trong kênh Ticket hoặc kênh riêng của khách hàng!' };
     }
@@ -2494,18 +2519,16 @@ client.on('messageCreate', async (message) => {
     // ------------------------------------------
     // TỰ ĐỘNG DỊCH HAI CHIỀU TRONG TICKET
     // ------------------------------------------
-    if (await isTicketChannel(message.channel, message.author)) {
-      const chName = (message.channel.name || '').toLowerCase();
-      const isEnTicket = chName.includes('-en-') || ticketTargetLangMap.has(message.channel.id);
+    if (await isTicketChannel(message.channel)) {
       const isTranslateDisabled = ticketTranslateDisabledSet.has(message.channel.id);
 
       // Xem bảng mã ngôn ngữ ngay trong ticket
-      if (lower === '!lang' || lower === '!lang help') {
+      if (lower === '!lang' || lower === '!lang help' || lower === '!lanh' || lower === '!dich help') {
         return message.reply({ embeds: [buildLanguageListEmbed()] }).catch(() => {});
       }
 
-      // Lệnh tắt bật dịch thủ công trong ticket
-      if (lower === '!tr on' || lower === '!translate on') {
+      // Lệnh tắt bật dịch thủ công trong ticket: !tr on / !tr off (hoặc !dich on / off)
+      if (lower === '!tr on' || lower === '!translate on' || lower === '!dich on') {
         ticketTranslateDisabledSet.delete(message.channel.id);
         if (!ticketTargetLangMap.has(message.channel.id)) ticketTargetLangMap.set(message.channel.id, 'en');
         saveTicketLanguages();
@@ -2513,7 +2536,7 @@ client.on('messageCreate', async (message) => {
         return;
       }
 
-      if (lower === '!tr off' || lower === '!translate off') {
+      if (lower === '!tr off' || lower === '!translate off' || lower === '!dich off') {
         ticketTranslateDisabledSet.add(message.channel.id);
         ticketTargetLangMap.delete(message.channel.id);
         saveTicketLanguages();
@@ -2521,8 +2544,9 @@ client.on('messageCreate', async (message) => {
         return;
       }
 
-      if (lower.startsWith('!lang ')) {
-        const rawInput = lower.replace('!lang ', '').trim();
+      // Lệnh đổi ngôn ngữ mục tiêu (Hỗ trợ cả lỗi gõ nhanh / teencode: !lang, !lanh, !lag, !dich, !tr)
+      if (lower.startsWith('!lang ') || lower.startsWith('!lanh ') || lower.startsWith('!lag ') || lower.startsWith('!dich ') || (lower.startsWith('!tr ') && !lower.startsWith('!tr on') && !lower.startsWith('!tr off'))) {
+        const rawInput = lower.replace(/^!(lang|lanh|lag|dich|tr)\s+/i, '').trim();
         const langCode = resolveLangCode(rawInput);
         if (langCode) {
           ticketTranslateDisabledSet.delete(message.channel.id);
@@ -2544,12 +2568,12 @@ client.on('messageCreate', async (message) => {
         const isIdPipeSyntax = /^\d{16,20}\s*\|/i.test(trimmed);
 
         if (!isCommand && hasLetters && !isUrl && !isIdPipeSyntax && trimmed.length >= 2) {
-          const targetLang = ticketTargetLangMap.get(message.channel.id) || (isEnTicket ? 'en' : null);
+          const targetLang = getTicketTargetLang(message.channel);
           const isVN = isProbablyVietnamese(trimmed);
 
           if (targetLang) {
             if (isVN) {
-              // Tin nhắn Tiếng Việt -> Dịch sang ngoại ngữ cho khách
+              // Tin nhắn Tiếng Việt -> Dịch sang ngoại ngữ mục tiêu cho khách
               const translated = await translateText(trimmed, 'vi', targetLang);
               if (translated && translated.toLowerCase() !== trimmed.toLowerCase()) {
                 await message.reply({
@@ -2585,7 +2609,7 @@ client.on('messageCreate', async (message) => {
 
     // Lệnh nhanh trong Ticket / Kênh riêng: /add @user hoặc !add @user
     if (lower.startsWith('/add') || lower.startsWith('!add')) {
-      if (await isTicketChannel(message.channel, message.author)) {
+      if (await isTicketChannel(message.channel) || isPrivateChannel(message.channel)) {
         let targets = Array.from(message.mentions.users.values()).filter(u => u.id !== client.user.id);
         if (targets.length === 0) {
           const parts = trimmed.split(/\s+/).slice(1);
@@ -2612,7 +2636,7 @@ client.on('messageCreate', async (message) => {
 
     // Lệnh nhanh trong Ticket / Kênh riêng: /remove @user hoặc !remove @user
     if (lower.startsWith('/remove') || lower.startsWith('!remove')) {
-      if (await isTicketChannel(message.channel, message.author)) {
+      if (await isTicketChannel(message.channel) || isPrivateChannel(message.channel)) {
         let targets = Array.from(message.mentions.users.values()).filter(u => u.id !== client.user.id);
         if (targets.length === 0) {
           const parts = trimmed.split(/\s+/).slice(1);
@@ -2641,7 +2665,7 @@ client.on('messageCreate', async (message) => {
     if (lower.startsWith('/name') || lower.startsWith('!name') || lower.startsWith('/rename') || lower.startsWith('!rename')) {
       const match = trimmed.match(/^(\/name|!name|\/rename|!rename)(?:\s+(.+))?$/i);
       if (match) {
-        if (await isTicketChannel(message.channel, message.author)) {
+        if (await isTicketChannel(message.channel) || isPrivateChannel(message.channel)) {
           const rawNewName = match[2]?.trim();
           if (!rawNewName) {
             return message.reply({ content: '⚠️ Cú pháp: `/name <tên_kênh_mới>` (VD: `/name Plong 301M 21/10/2026`)' }).catch(() => {});
@@ -2679,7 +2703,7 @@ client.on('messageCreate', async (message) => {
       const match = trimmed.match(/^(\/feedback|!feedback|\/fb|!fb)(?:\s+(.+))?$/i);
       if (match) {
         const isStaff = await isStaffMember({ guild: message.guild, user: message.author });
-        const isTicket = await isTicketChannel(message.channel, message.author);
+        const isTicket = (await isTicketChannel(message.channel)) || isPrivateChannel(message.channel);
         if (isTicket || isStaff) {
           const targetUser = message.mentions.users.first() || null;
           const rawService = (match[2] || '').split(/\s+/).filter(p => !p.startsWith('<@')).join(' ').trim();
