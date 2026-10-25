@@ -1832,9 +1832,17 @@ function isPrivateChannel(channel) {
 async function isTicketChannel(channel) {
   if (!channel || !channel.guild || !channel.isTextBased()) return false;
 
+  const cleanName = (channel.name || '').toLowerCase();
+
+  // Bỏ qua các kênh bảng điều khiển, menu, nội quy, feedback chung (kể cả khi nằm trong category Ticket)
+  if (cleanName.includes('panel') || cleanName.includes('menu') || cleanName.includes('rule') || 
+      cleanName.includes('guide') || cleanName.includes('proof') || cleanName.includes('voucher') || 
+      cleanName.includes('feedback') || cleanName === 'ticket-support') {
+    return false;
+  }
+
   // 1. Kênh có tiền tố ticket: ticket-, order-, closed-
-  const name = (channel.name || '').toLowerCase();
-  if (name.startsWith('ticket-') || name.startsWith('order-') || name.startsWith('closed-')) return true;
+  if (cleanName.startsWith('ticket-') || cleanName.startsWith('order-') || cleanName.startsWith('closed-')) return true;
 
   // 2. Kênh nằm trong Category có chứa chữ TICKET (VD: TICKET, FORIEGN TICKET, CLOSED TICKET)
   if (channel.parent) {
@@ -2523,8 +2531,19 @@ client.on('messageCreate', async (message) => {
       const isTranslateDisabled = ticketTranslateDisabledSet.has(message.channel.id);
 
       // Xem bảng mã ngôn ngữ ngay trong ticket
-      if (lower === '!lang' || lower === '!lang help' || lower === '!lanh' || lower === '!dich help') {
+      if (lower === '!langs' || lower === '!languages' || lower === '!lang help' || lower === '!lanh' || lower === '!dich help') {
         return message.reply({ embeds: [buildLanguageListEmbed()] }).catch(() => {});
+      }
+
+      // Lệnh đặt lại / dọn dẹp sạch toàn bộ cài đặt dịch của các kênh: !tr clear / !tr reset / !dich clear
+      if (lower === '!tr clear' || lower === '!tr reset' || lower === '!dich clear' || lower === '!dich reset') {
+        const isStaff = await isStaffMember(message);
+        if (!isStaff) return;
+        ticketTargetLangMap.clear();
+        ticketTranslateDisabledSet.clear();
+        saveTicketLanguages();
+        await message.reply('🧹 **Đã đặt lại toàn bộ hệ thống dịch thuật!**\n• Tất cả các kênh thường và ticket nội địa đã được tắt dịch hoàn toàn.\n• Chỉ các ticket quốc tế (danh mục `FORIEGN TICKET` hoặc tên có `-en-`) mới có dịch tự động.').catch(() => {});
+        return;
       }
 
       // Lệnh tắt bật dịch thủ công trong ticket: !tr on / !tr off (hoặc !dich on / off)
@@ -2545,7 +2564,7 @@ client.on('messageCreate', async (message) => {
       }
 
       // Lệnh đổi ngôn ngữ mục tiêu (Hỗ trợ cả lỗi gõ nhanh / teencode: !lang, !lanh, !lag, !dich, !tr)
-      if (lower.startsWith('!lang ') || lower.startsWith('!lanh ') || lower.startsWith('!lag ') || lower.startsWith('!dich ') || (lower.startsWith('!tr ') && !lower.startsWith('!tr on') && !lower.startsWith('!tr off'))) {
+      if (lower.startsWith('!lang ') || lower.startsWith('!lanh ') || lower.startsWith('!lag ') || (lower.startsWith('!dich ') && !lower.startsWith('!dich on') && !lower.startsWith('!dich off')) || (lower.startsWith('!tr ') && !lower.startsWith('!tr on') && !lower.startsWith('!tr off'))) {
         const rawInput = lower.replace(/^!(lang|lanh|lag|dich|tr)\s+/i, '').trim();
         const langCode = resolveLangCode(rawInput);
         if (langCode) {
@@ -2555,12 +2574,28 @@ client.on('messageCreate', async (message) => {
           await message.reply(`🌐 **Ngôn ngữ mục tiêu của Ticket đã đổi thành:** \`${langCode.toUpperCase()}\`.\n• Bot sẽ tự động dịch hai chiều giữa Tiếng Việt và ${langCode.toUpperCase()}.\n• Gõ \`!langs\` nếu muốn xem lại danh sách mã ngôn ngữ khác.`).catch(() => {});
           return;
         } else {
-          await message.reply(`⚠️ Không nhận diện được mã hoặc tên ngôn ngữ \`${rawInput}\`.\n👉 Gõ \`!langs\` để xem bảng danh sách các mã hỗ trợ nhé!`).catch(() => {});
-          return;
+          // Nếu không phải mã ngôn ngữ mà là câu văn (VD: !tr can you send payment info?) -> Dịch nhanh 1 câu đó mà KHÔNG bật dịch liên tục
+          const textToTranslate = trimmed.replace(/^!(lang|lanh|lag|dich|tr)\s+/i, '').trim();
+          if (textToTranslate && textToTranslate.length >= 2) {
+            const isTextVN = isProbablyVietnamese(textToTranslate);
+            const fromLang = isTextVN ? 'vi' : 'auto';
+            const toLang = isTextVN ? 'en' : 'vi';
+            const oneOff = await translateText(textToTranslate, fromLang, toLang);
+            if (oneOff) {
+              const flag = isTextVN ? '🌐 [EN]' : '🇻🇳 [Dịch]';
+              await message.reply({
+                content: `${flag}: *${oneOff}*`,
+                allowedMentions: { repliedUser: false }
+              }).catch(() => {});
+              return;
+            }
+          }
         }
       }
 
-      // Tự động dịch hai chiều
+      // TỰ ĐỘNG DỊCH HAI CHIỀU TRONG TICKET
+      // CHỈ DỊCH KHI KÊNH ĐÃ CÓ targetLang (Thuộc danh mục FORIEGN TICKET, tên có -en-, hoặc được Staff bật chủ động qua !lang)
+      // TUYỆT ĐỐI KHÔNG TỰ ĐỘNG KÍCH HOẠT DỊCH Ở CÁC TICKET NỘI ĐỊA VIỆT NAM THÔNG THƯỜNG!
       if (!isTranslateDisabled) {
         const isCommand = trimmed.startsWith('!') || trimmed.startsWith('/') || trimmed.startsWith('4am') || trimmed.startsWith('tos') || trimmed.startsWith('stk');
         const hasLetters = /[a-zA-ZÀ-ỹ]/.test(trimmed);
@@ -2569,9 +2604,9 @@ client.on('messageCreate', async (message) => {
 
         if (!isCommand && hasLetters && !isUrl && !isIdPipeSyntax && trimmed.length >= 2) {
           const targetLang = getTicketTargetLang(message.channel);
-          const isVN = isProbablyVietnamese(trimmed);
 
           if (targetLang) {
+            const isVN = isProbablyVietnamese(trimmed);
             if (isVN) {
               // Tin nhắn Tiếng Việt -> Dịch sang ngoại ngữ mục tiêu cho khách
               const translated = await translateText(trimmed, 'vi', targetLang);
@@ -2590,17 +2625,6 @@ client.on('messageCreate', async (message) => {
                   allowedMentions: { repliedUser: false }
                 }).catch(() => {});
               }
-            }
-          } else if (!isVN && trimmed.length >= 8) {
-            // Khách nhắn ngoại ngữ trong Ticket bình thường -> Tự động bật dịch hai chiều
-            const translated = await translateText(trimmed, 'auto', 'vi');
-            if (translated && translated.toLowerCase() !== trimmed.toLowerCase()) {
-              ticketTargetLangMap.set(message.channel.id, 'en');
-              saveTicketLanguages();
-              await message.reply({
-                content: `🇻🇳 **[Dịch]:** *${translated}*\n*(🌐 Đã tự động kích hoạt dịch thuật hai chiều Tiếng Việt ⮂ Tiếng Anh cho ticket này)*`,
-                allowedMentions: { repliedUser: false }
-              }).catch(() => {});
             }
           }
         }
@@ -2904,12 +2928,12 @@ client.on('interactionCreate', async (i) => {
   }
 
   // --- Toggle Ticket Auto-Translate Button ---
-  if (i.isButton() && i.customId === 'toggle_ticket_translate') {
+  if (i.isButton() && (i.customId === 'toggle_ticket_translate' || i.customId.startsWith('toggle_ticket_translate|'))) {
     const chId = i.channel.id;
-    const isDisabled = ticketTranslateDisabledSet.has(chId);
-    if (isDisabled) {
+    const isCurrentlyActive = ticketTargetLangMap.has(chId) && !ticketTranslateDisabledSet.has(chId);
+    if (!isCurrentlyActive) {
       ticketTranslateDisabledSet.delete(chId);
-      if (!ticketTargetLangMap.has(chId)) ticketTargetLangMap.set(chId, 'en');
+      ticketTargetLangMap.set(chId, 'en');
       saveTicketLanguages();
       await i.reply({ content: '🌐 **Đã BẬT tự động dịch hai chiều cho ticket này.** (Staff chat tiếng Việt -> Khách đọc tiếng Anh; Khách chat tiếng nước ngoài -> Staff đọc tiếng Việt)', ephemeral: false }).catch(() => {});
     } else {
@@ -3299,8 +3323,8 @@ client.on('interactionCreate', async (i) => {
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
         .setCustomId(`toggle_ticket_translate|${ticketChannel.id}`)
-        .setLabel(isEn ? '🌐 Auto-Translate: ON' : '🌐 Dịch: BẬT')
-        .setStyle(ButtonStyle.Secondary)
+        .setLabel(isEn ? '🌐 Auto-Translate: ON' : '🌐 Bật dịch hai chiều')
+        .setStyle(isEn ? ButtonStyle.Success : ButtonStyle.Secondary)
     );
 
     await ticketChannel.send({
