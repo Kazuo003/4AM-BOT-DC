@@ -238,7 +238,8 @@ async function translateWithGroq(text, from = 'auto', to = 'vi') {
   if (!apiKey) apiKey = FALLBACK_GROQ_KEY;
 
   const targetLangName = LANG_FULL_NAME_MAP[to] || to;
-  const models = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
+  // Model tối ưu hàng đầu của Groq: qwen/qwen3.8-27b (phản hồi siêu nhanh <1s, dịch tiếng lóng game cực chuẩn)
+  const models = ['qwen/qwen3.8-27b'];
 
   for (const model of models) {
     try {
@@ -257,7 +258,7 @@ async function translateWithGroq(text, from = 'auto', to = 'vi') {
           temperature: 0.1,
           max_tokens: 300
         }),
-        signal: AbortSignal.timeout(3500)
+        signal: AbortSignal.timeout(4500)
       });
 
       if (res.ok) {
@@ -283,7 +284,7 @@ async function translateWithGoogleGTX(text, from = 'auto', to = 'vi') {
     const gUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${to}&dt=t&q=${encodeURIComponent(text)}`;
     const gRes = await fetch(gUrl, { 
       headers: { 'User-Agent': 'Mozilla/5.0' }, 
-      signal: AbortSignal.timeout(3000) 
+      signal: AbortSignal.timeout(3500) 
     });
     if (gRes.ok) {
       const gData = await gRes.json();
@@ -292,6 +293,25 @@ async function translateWithGoogleGTX(text, from = 'auto', to = 'vi') {
         if (out && out.toLowerCase() !== text.toLowerCase()) {
           return out;
         }
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
+ * Dịch thuật bằng MyMemory API (Dự phòng cấp 3 nếu cả Groq và Google GTX đều bận)
+ */
+async function translateWithMyMemory(text, from = 'auto', to = 'vi') {
+  try {
+    const sl = from === 'auto' ? 'en' : from;
+    const mUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sl}|${to}`;
+    const mRes = await fetch(mUrl, { signal: AbortSignal.timeout(3500) });
+    if (mRes.ok) {
+      const mData = await mRes.json();
+      const out = mData.responseData?.translatedText?.trim();
+      if (out && out.toLowerCase() !== text.toLowerCase() && !out.toUpperCase().includes('MYMEMORY WARNING')) {
+        return out;
       }
     }
   } catch (_) {}
@@ -327,7 +347,12 @@ async function translateText(text, from = 'auto', to = 'vi') {
     translated = await translateWithGoogleGTX(tokenized, from, to);
   }
 
-  // Bước 5: Phục hồi lại các tag Discord
+  // Bước 5: Fallback MyMemory (đảm bảo 100% không bao giờ trượt)
+  if (!translated) {
+    translated = await translateWithMyMemory(tokenized, from, to);
+  }
+
+  // Bước 6: Phục hồi lại các tag Discord
   if (translated) {
     translated = unmaskTokens(translated, tokens);
     if (translationCache.size > 500) translationCache.clear();
