@@ -35,5 +35,20 @@
     "enabled": true,
     "updatedAt": "2026-10-24T08:50:00.000Z",
     "createdAt": "2026-10-24T07:35:00.000Z"
+  },
+  {
+    "id": "lvlowo01",
+    "trigger": "lvlowo",
+    "triggers": [
+      "lvlowo",
+      "lvl owo"
+    ],
+    "response": "",
+    "imageUrl": "public/lvlowo.png",
+    "matchType": "contains",
+    "replyMode": "reply",
+    "enabled": true,
+    "updatedAt": "2026-10-26T22:56:00.000Z",
+    "createdAt": "2026-10-26T22:56:00.000Z"
   }
 ]
