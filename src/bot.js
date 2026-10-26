@@ -2480,11 +2480,40 @@ client.on('messageCreate', async (message) => {
 
       const list = loadGiveaways();
       const activeGA = list.find(g => !g.ended && g.channelId === message.channelId && g.endsAt > Date.now());
-      const preserveId = activeGA ? activeGA.messageId : null;
+      const lastEnded = list
+        .filter(g => g.ended && g.channelId === message.channelId && g.winners && g.winners.length > 0)
+        .sort((a, b) => (b.endsAt || b.createdAt) - (a.endsAt || a.createdAt))[0];
 
-      const count = await cleanOldDailyGiveaways(message.channel, preserveId);
+      const preserveIds = [];
+      if (activeGA) preserveIds.push(activeGA.messageId);
 
-      const statusMsg = await message.channel.send(`🧹 **Đã dọn dẹp sạch sẽ kênh Giveaway!** (Đã xóa ${count} tin nhắn cũ${preserveId ? ', giữ lại giveaway đang hoạt động' : ''})`).catch(() => null);
+      let winnerMsgFound = false;
+      if (lastEnded && lastEnded.winnerMessageId) {
+        const existingWinMsg = await message.channel.messages.fetch(lastEnded.winnerMessageId).catch(() => null);
+        if (existingWinMsg) {
+          winnerMsgFound = true;
+          preserveIds.push(lastEnded.winnerMessageId);
+        }
+      }
+
+      const count = await cleanOldDailyGiveaways(message.channel, preserveIds);
+
+      // Nếu tin thông báo người thắng của đợt vừa rồi đã bị xóa, tự động gửi lại lên đầu kênh
+      if (lastEnded && !winnerMsgFound && lastEnded.winners && lastEnded.winners.length > 0) {
+        const mentions = lastEnded.winners.map(id => `<@${id}>`).join(' ');
+        const cleanPrize = cleanPrizeText(lastEnded.prize);
+        const reWinMsg = await message.channel.send({
+          content: `🎊 **CHÚC MỪNG CHIẾN THẮNG DAILY GIVEAWAY HÔM TRƯỚC!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${cleanPrize}**!\n👉 **Lưu ý:** Staff sẽ kiểm tra bio (\`owo giá rẻ tại: discord.gg/fouram\`) trước khi trao giải.\nNếu hợp lệ, hãy mở Ticket Staff để nhận quà nhé! 🎁`,
+          flags: [4096]
+        }).catch(() => null);
+
+        if (reWinMsg) {
+          lastEnded.winnerMessageId = reWinMsg.id;
+          saveGiveaways(list);
+        }
+      }
+
+      const statusMsg = await message.channel.send(`🧹 **Đã dọn dẹp sạch sẽ kênh Giveaway!** (Đã xóa ${count} tin nhắn cũ, giữ lại thông báo người trúng hôm trước và đợt giveaway đang chạy)`).catch(() => null);
 
       if (statusMsg) {
         setTimeout(() => {
@@ -2492,6 +2521,41 @@ client.on('messageCreate', async (message) => {
         }, 5000);
       }
       return;
+    }
+
+    // Lệnh xem lịch sử người trúng giveaway gần đây dành cho Staff: !gawinner, !gawinners, !gals
+    if (lower === '!gawinner' || lower === '!gawinners' || lower === '!gals') {
+      const isStaff = await isStaffMember(message);
+      if (!isStaff) {
+        return message.reply('❌ Lệnh này chỉ dành cho Staff / Quản trị viên!').catch(() => {});
+      }
+
+      const list = loadGiveaways();
+      const endedList = list
+        .filter(g => g.ended && g.winners && g.winners.length > 0)
+        .sort((a, b) => (b.endsAt || b.createdAt) - (a.endsAt || a.createdAt))
+        .slice(0, 10);
+
+      if (endedList.length === 0) {
+        return message.reply('ℹ️ Chưa có sự kiện Giveaway nào kết thúc có người trúng giải trong hệ thống.').catch(() => {});
+      }
+
+      const desc = endedList.map((g, idx) => {
+        const timeStr = g.endsAt ? `<t:${Math.floor(g.endsAt / 1000)}:f> (<t:${Math.floor(g.endsAt / 1000)}:R>)` : '*(Không rõ)*';
+        const mentions = g.winners.map(id => `<@${id}>`).join(', ');
+        const cleanPrize = cleanPrizeText(g.prize);
+        const tag = g.isDaily ? '🎁 [DAILY]' : '🎉 [EVENT]';
+        return `${idx + 1}. **${cleanPrize}** ${tag}\n   • 🏆 **Người trúng:** ${mentions}\n   • 👑 **Tổ chức:** <@${g.hostId}>\n   • ⏰ **Thời gian:** ${timeStr}`;
+      });
+
+      const embed = new EmbedBuilder()
+        .setTitle('🏆 LỊCH SỬ NGƯỜI CHIẾN THẮNG GIVEAWAY')
+        .setDescription(desc.join('\n\n'))
+        .setColor(0x00C2A8)
+        .setFooter({ text: '4AM Shop • Tra cứu người trúng giải' })
+        .setTimestamp();
+
+      return message.reply({ embeds: [embed] }).catch(() => {});
     }
 
     // Lệnh dịch thủ công 1 câu đơn lẻ: !dich <câu> hoặc !tr <câu> (Chỉ dịch khi Staff chủ động gọi lệnh, KHÔNG tự động dịch trong cuộc trò chuyện)
@@ -5985,11 +6049,48 @@ if (i.isChatInputCommand() && i.commandName === 'giveaway') {
     await i.deferReply({ ephemeral: true });
     const list = loadGiveaways();
     const activeGA = list.find(g => !g.ended && g.channelId === targetChannel.id && g.endsAt > Date.now());
-    const preserveId = activeGA ? activeGA.messageId : null;
-    const count = await cleanOldDailyGiveaways(targetChannel, preserveId);
+    const lastEnded = list
+      .filter(g => g.ended && g.channelId === targetChannel.id && g.winners && g.winners.length > 0)
+      .sort((a, b) => (b.endsAt || b.createdAt) - (a.endsAt || a.createdAt))[0];
+
+    const preserveIds = [];
+    if (activeGA) preserveIds.push(activeGA.messageId);
+    if (lastEnded && lastEnded.winnerMessageId) preserveIds.push(lastEnded.winnerMessageId);
+
+    const count = await cleanOldDailyGiveaways(targetChannel, preserveIds);
     return i.editReply({
-      content: `✅ Đã dọn dẹp ${count} tin nhắn cũ tại kênh <#${targetChannel.id}>${preserveId ? ' (đã giữ lại Giveaway đang hoạt động)' : ''}!`
+      content: `✅ Đã dọn dẹp ${count} tin nhắn cũ tại kênh <#${targetChannel.id}> (đã giữ lại thông báo người trúng hôm trước và Giveaway đang hoạt động)!`
     });
+  }
+
+  if (sub === 'winners') {
+    await i.deferReply({ ephemeral: true });
+    const list = loadGiveaways();
+    const endedList = list
+      .filter(g => g.ended && g.winners && g.winners.length > 0)
+      .sort((a, b) => (b.endsAt || b.createdAt) - (a.endsAt || a.createdAt))
+      .slice(0, 10);
+
+    if (endedList.length === 0) {
+      return i.editReply({ content: 'ℹ️ Chưa có sự kiện Giveaway nào kết thúc có người trúng giải trong hệ thống.' });
+    }
+
+    const desc = endedList.map((g, idx) => {
+      const timeStr = g.endsAt ? `<t:${Math.floor(g.endsAt / 1000)}:f> (<t:${Math.floor(g.endsAt / 1000)}:R>)` : '*(Không rõ)*';
+      const mentions = g.winners.map(id => `<@${id}>`).join(', ');
+      const cleanPrize = cleanPrizeText(g.prize);
+      const tag = g.isDaily ? '🎁 [DAILY]' : '🎉 [EVENT]';
+      return `${idx + 1}. **${cleanPrize}** ${tag}\n   • 🏆 **Người trúng:** ${mentions}\n   • 👑 **Tổ chức:** <@${g.hostId}>\n   • ⏰ **Thời gian:** ${timeStr}`;
+    });
+
+    const embed = new EmbedBuilder()
+      .setTitle('🏆 LỊCH SỬ NGƯỜI CHIẾN THẮNG GIVEAWAY')
+      .setDescription(desc.join('\n\n'))
+      .setColor(0x00C2A8)
+      .setFooter({ text: '4AM Shop • Tra cứu người trúng giải' })
+      .setTimestamp();
+
+    return i.editReply({ embeds: [embed] });
   }
 }
 

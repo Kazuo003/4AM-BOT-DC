@@ -382,11 +382,15 @@ async function endGiveaway(client, messageId, manual = false) {
           const mentions = winners.map(id => `<@${id}>`).join(' ');
           const cleanPrize = cleanPrizeText(g.prize);
           if (g.isDaily) {
-            await channel.send({
+            const winMsg = await channel.send({
               content: `🎊 **CHÚC MỪNG CHIẾN THẮNG DAILY GIVEAWAY!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${cleanPrize}**!\n👉 **Lưu ý:** Staff sẽ kiểm tra bio (\`owo giá rẻ tại: discord.gg/fouram\`) trước khi trao giải.\nNếu hợp lệ, hãy mở Ticket Staff để nhận quà nhé! 🎁`,
-              reply: { messageReference: g.messageId },
               flags: [4096] // MessageFlags.SuppressEmbeds: không bung widget invite to đùng
-            }).catch(() => {});
+            }).catch(() => null);
+
+            if (winMsg) {
+              g.winnerMessageId = winMsg.id;
+              saveGiveaways(list);
+            }
           } else {
             await channel.send({
               content: `🎊 **CHÚC MỪNG CHIẾN THẮNG!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${cleanPrize}** tổ chức bởi <@${g.hostId}>!\n👉 Hãy nhắn tin cho người tổ chức hoặc mở Ticket Staff để nhận thưởng nhé!`,
@@ -480,16 +484,19 @@ async function rerollGiveaway(client, messageId, rerollCount = 1) {
 
 /**
  * Dọn dẹp các tin nhắn cũ trong kênh Daily Giveaway để giữ kênh luôn sạch sẽ, không bị biến thành bãi rác
+ * Hỗ trợ truyền 1 ID hoặc 1 mảng IDs cần giữ lại (VD: Tin người trúng hôm trước + Embed hôm nay)
  */
-async function cleanOldDailyGiveaways(channel, preserveMessageId = null) {
+async function cleanOldDailyGiveaways(channel, preserveIds = []) {
   let totalDeleted = 0;
   try {
     if (!channel || !channel.isTextBased()) return 0;
+    const preserveSet = new Set(Array.isArray(preserveIds) ? preserveIds : [preserveIds].filter(Boolean));
+
     const fetched = await channel.messages.fetch({ limit: 100 }).catch(() => null);
     if (!fetched || fetched.size === 0) return 0;
 
     const toDelete = fetched.filter(m => {
-      if (preserveMessageId && m.id === preserveMessageId) return false;
+      if (preserveSet.has(m.id)) return false;
       if (m.pinned) return false;
       return true;
     });
@@ -516,6 +523,7 @@ async function cleanOldDailyGiveaways(channel, preserveMessageId = null) {
 
 /**
  * Tự động tạo một đợt Daily Giveaway 1M Cow kéo dài 24 tiếng
+ * Giữ lại hoặc khôi phục thông báo người chiến thắng hôm trước trên đầu kênh
  */
 async function startDailyGiveaway(client, channelId = DAILY_GIVEAWAY_CHANNEL_ID, customConfig = {}) {
   if (isStartingDaily) return null;
@@ -527,8 +535,40 @@ async function startDailyGiveaway(client, channelId = DAILY_GIVEAWAY_CHANNEL_ID,
       return null;
     }
 
-    // Tự động dọn dẹp các tin nhắn cũ trong kênh trước khi tạo mới để kênh luôn sạch sẽ
-    await cleanOldDailyGiveaways(channel);
+    const list = loadGiveaways();
+    const lastEndedDaily = list
+      .filter(x => x.isDaily && x.ended && x.channelId === channelId && x.winners && x.winners.length > 0)
+      .sort((a, b) => (b.endsAt || b.createdAt) - (a.endsAt || a.createdAt))[0];
+
+    const preserveIds = [];
+
+    // Kiểm tra xem tin nhắn thông báo người thắng của đợt vừa rồi còn tồn tại trong kênh không
+    let winnerMsgFound = false;
+    if (lastEndedDaily && lastEndedDaily.winnerMessageId) {
+      const existingWinMsg = await channel.messages.fetch(lastEndedDaily.winnerMessageId).catch(() => null);
+      if (existingWinMsg) {
+        winnerMsgFound = true;
+        preserveIds.push(lastEndedDaily.winnerMessageId);
+      }
+    }
+
+    // Tự động dọn dẹp các tin nhắn cũ và tin nhắn rác, giữ lại thông báo người trúng gần nhất
+    await cleanOldDailyGiveaways(channel, preserveIds);
+
+    // Nếu tin người thắng đợt vừa rồi bị mất (hoặc đã bị xóa trước đó), tự động gửi lại lên đầu kênh
+    if (lastEndedDaily && !winnerMsgFound && lastEndedDaily.winners && lastEndedDaily.winners.length > 0) {
+      const mentions = lastEndedDaily.winners.map(id => `<@${id}>`).join(' ');
+      const cleanPrize = cleanPrizeText(lastEndedDaily.prize);
+      const reWinMsg = await channel.send({
+        content: `🎊 **CHÚC MỪNG CHIẾN THẮNG DAILY GIVEAWAY HÔM TRƯỚC!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${cleanPrize}**!\n👉 **Lưu ý:** Staff sẽ kiểm tra bio (\`owo giá rẻ tại: discord.gg/fouram\`) trước khi trao giải.\nNếu hợp lệ, hãy mở Ticket Staff để nhận quà nhé! 🎁`,
+        flags: [4096] // SuppressEmbeds
+      }).catch(() => null);
+
+      if (reWinMsg) {
+        lastEndedDaily.winnerMessageId = reWinMsg.id;
+        saveGiveaways(list);
+      }
+    }
 
     const guild = channel.guild;
     const hostId = customConfig.hostId || guild.ownerId || '895890393806274570';
