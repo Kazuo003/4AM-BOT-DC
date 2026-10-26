@@ -66,8 +66,8 @@ const {
   isProbablyVietnamese 
 } = require('./translator');
 
-// Tỷ giá quy đổi VNĐ sang USD cho Menu quốc tế ($1 USD = 24.000 VNĐ để bù phí giao dịch crypto, không bị rẻ hơn VNĐ)
-const DEFAULT_USD_RATE = parseInt(process.env.USD_EXCHANGE_RATE, 10) || 24000;
+// Tỷ giá quy đổi VNĐ sang USD cho Menu quốc tế ($1 USD = 23.000 VNĐ để bù phí giao dịch crypto, không bị rẻ hơn VNĐ)
+const DEFAULT_USD_RATE = parseInt(process.env.USD_EXCHANGE_RATE, 10) || 23000;
 
 const client = new Client({
   intents: [
