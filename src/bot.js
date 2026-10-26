@@ -50,6 +50,8 @@ const {
   loadGiveaways,
   saveGiveaways,
   parseDuration,
+  cleanPrizeText,
+  cleanOldDailyGiveaways,
   buildActiveGiveawayEmbed,
   buildGiveawayActionRow,
   buildEndedGiveawayEmbed,
@@ -2465,6 +2467,31 @@ client.on('messageCreate', async (message) => {
       }
       await syncMenuChannel();
       return message.reply('✅ Đã đồng bộ lại Bảng Giá Menu song ngữ (VNĐ & USD) thành công!').catch(() => {});
+    }
+
+    // Lệnh dọn dẹp rác kênh Giveaway Daily dành cho Staff: !gaclean, !cleanga
+    if (lower === '!gaclean' || lower === '!cleanga' || lower === '!clean-ga') {
+      const isStaff = await isStaffMember(message);
+      if (!isStaff) {
+        return message.reply('❌ Lệnh này chỉ dành cho Staff / Quản trị viên!').catch(() => {});
+      }
+
+      await message.delete().catch(() => {});
+
+      const list = loadGiveaways();
+      const activeGA = list.find(g => !g.ended && g.channelId === message.channelId && g.endsAt > Date.now());
+      const preserveId = activeGA ? activeGA.messageId : null;
+
+      const count = await cleanOldDailyGiveaways(message.channel, preserveId);
+
+      const statusMsg = await message.channel.send(`🧹 **Đã dọn dẹp sạch sẽ kênh Giveaway!** (Đã xóa ${count} tin nhắn cũ${preserveId ? ', giữ lại giveaway đang hoạt động' : ''})`).catch(() => null);
+
+      if (statusMsg) {
+        setTimeout(() => {
+          statusMsg.delete().catch(() => {});
+        }, 5000);
+      }
+      return;
     }
 
     // Lệnh dịch thủ công 1 câu đơn lẻ: !dich <câu> hoặc !tr <câu> (Chỉ dịch khi Staff chủ động gọi lệnh, KHÔNG tự động dịch trong cuộc trò chuyện)
@@ -5952,6 +5979,18 @@ if (i.isChatInputCommand() && i.commandName === 'giveaway') {
 
     return i.reply({ embeds: [embed], ephemeral: true });
   }
+
+  if (sub === 'clean') {
+    const targetChannel = i.options.getChannel('channel') || i.channel;
+    await i.deferReply({ ephemeral: true });
+    const list = loadGiveaways();
+    const activeGA = list.find(g => !g.ended && g.channelId === targetChannel.id && g.endsAt > Date.now());
+    const preserveId = activeGA ? activeGA.messageId : null;
+    const count = await cleanOldDailyGiveaways(targetChannel, preserveId);
+    return i.editReply({
+      content: `✅ Đã dọn dẹp ${count} tin nhắn cũ tại kênh <#${targetChannel.id}>${preserveId ? ' (đã giữ lại Giveaway đang hoạt động)' : ''}!`
+    });
+  }
 }
 
 // ==========================================
@@ -6114,14 +6153,15 @@ if (i.isButton() && i.customId.startsWith('giveaway_join|')) {
     await i.update({ embeds: [updatedEmbed], components: [updatedRow] }).catch(() => {});
   } catch (_) {}
 
+  const cleanPrize = cleanPrizeText(res.giveaway.prize);
   if (res.joined) {
     return i.followUp({
-      content: `🎉 Bạn đã tham gia giveaway **${res.giveaway.prize}** thành công! Chúc bạn may mắn!`,
+      content: `🎉 Bạn đã tham gia giveaway **${cleanPrize}** thành công! Chúc bạn may mắn!`,
       ephemeral: true
     });
   } else {
     return i.followUp({
-      content: `❌ Bạn đã rời khỏi danh sách tham gia giveaway **${res.giveaway.prize}**.`,
+      content: `❌ Bạn đã rời khỏi danh sách tham gia giveaway **${cleanPrize}**.`,
       ephemeral: true
     });
   }

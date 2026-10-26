@@ -108,34 +108,56 @@ function parseDuration(input) {
   }
   return totalMs > 0 ? totalMs : null;
 }
+/**
+ * Lọc sạch tên phần thưởng, loại bỏ ngoặc dư thừa như (1M Cow), (500k)
+ */
+function cleanPrizeText(prize) {
+  if (!prize) return '';
+  return String(prize).replace(/\s*\([^)]*\)/g, '').trim();
+}
 
 /**
- * Tạo Embed hiển thị Giveaway đang hoạt động
+ * Tạo Embed hiển thị Giveaway đang hoạt động (Chuẩn Mẫu 2: Quote Block, không in đậm nhãn, không thừa ngoặc)
  */
 function buildActiveGiveawayEmbed(giveaway) {
   const endsTimestamp = Math.floor(giveaway.endsAt / 1000);
   const participantsCount = (giveaway.participants || []).length;
+  const cleanPrize = cleanPrizeText(giveaway.prize);
+  const isDaily = !!giveaway.isDaily;
 
-  const desc = [
-    `🎁 **Phần thưởng:** **${giveaway.prize}**`,
-    `🏆 **Số người trúng giải:** **${giveaway.winnersCount} người**`,
-    `👑 **Người tổ chức:** <@${giveaway.hostId}>`,
-    `⏳ **Thời gian kết thúc:** <t:${endsTimestamp}:R> (<t:${endsTimestamp}:f>)`,
-    `👥 **Số người tham gia:** **${participantsCount}**`
+  const quoteLines = [
+    `> 👑 Tổ chức: <@${giveaway.hostId}>`,
+    `> 🏆 Số lượng: ${giveaway.winnersCount || 1} giải`,
+    `> ⌛ Kết thúc: <t:${endsTimestamp}:R>`,
+    `> 👥 Tham gia: ${participantsCount}`
   ];
 
-  if (giveaway.description) {
-    desc.push('', `📝 **Ghi chú/Điều kiện:** ${giveaway.description}`);
+  let reqBlock = '';
+  if (isDaily) {
+    reqBlock = [
+      '',
+      '📌 Yêu cầu bắt buộc:',
+      '• Treo bio: `owo giá rẻ tại: discord.gg/fouram`',
+      '• Chưa treo bio khi chốt giải sẽ bị reroll.'
+    ].join('\n');
+  } else if (giveaway.description) {
+    reqBlock = [
+      '',
+      '📌 Yêu cầu bắt buộc:',
+      `• ${giveaway.description}`
+    ].join('\n');
   }
 
-  desc.push('', '⚡ *Nhấn nút **[ 🎉 Tham gia ]** bên dưới để có cơ hội nhận quà!*');
+  const desc = quoteLines.join('\n') + (reqBlock ? '\n' + reqBlock : '');
+  const title = isDaily
+    ? `🎁 DAILY GIVEAWAY — ${cleanPrize.toUpperCase()}`
+    : `🎁 GIVEAWAY — ${cleanPrize.toUpperCase()}`;
 
   return new EmbedBuilder()
-    .setTitle(`🎉 GIVEAWAY: ${giveaway.prize.toUpperCase()} 🎉`)
-    .setDescription(desc.join('\n'))
+    .setTitle(title)
+    .setDescription(desc)
     .setColor(0x5865F2)
-    .setThumbnail('https://cdn.discordapp.com/emojis/1283685258925895741.gif')
-    .setFooter({ text: '4AM SHOP • Chúc bạn may mắn!' })
+    .setFooter({ text: '4AM SHOP' })
     .setTimestamp(new Date(giveaway.endsAt));
 }
 
@@ -154,29 +176,47 @@ function buildGiveawayActionRow(giveaway, isEnded = false) {
 }
 
 /**
- * Tạo Embed hiển thị Giveaway đã kết thúc
+ * Tạo Embed hiển thị Giveaway đã kết thúc (Chuẩn Mẫu 2)
  */
 function buildEndedGiveawayEmbed(giveaway) {
   const winnersList = (giveaway.winners && giveaway.winners.length > 0)
     ? giveaway.winners.map(id => `<@${id}>`).join(', ')
     : '*Không có người tham gia hợp lệ*';
+  const cleanPrize = cleanPrizeText(giveaway.prize);
+  const isDaily = !!giveaway.isDaily;
 
-  const desc = [
-    `🎁 **Phần thưởng:** **${giveaway.prize}**`,
-    `👑 **Người tổ chức:** <@${giveaway.hostId}>`,
-    `🏆 **Người chiến thắng:** ${winnersList}`,
-    `👥 **Tổng số người tham gia:** **${(giveaway.participants || []).length}**`
+  const quoteLines = [
+    `> 👑 Tổ chức: <@${giveaway.hostId}>`,
+    `> 🏆 Người chiến thắng: ${winnersList}`,
+    `> 👥 Tham gia: ${(giveaway.participants || []).length}`
   ];
 
-  if (giveaway.description) {
-    desc.push('', `📝 **Ghi chú:** ${giveaway.description}`);
+  let noteBlock = '';
+  if (isDaily) {
+    noteBlock = [
+      '',
+      '📌 Lưu ý:',
+      '• Staff sẽ kiểm tra bio trước khi trao giải.',
+      '• Nếu hợp lệ, hãy mở Ticket Staff để nhận quà nhé!'
+    ].join('\n');
+  } else if (giveaway.description) {
+    noteBlock = [
+      '',
+      '📌 Ghi chú:',
+      `• ${giveaway.description}`
+    ].join('\n');
   }
 
+  const desc = quoteLines.join('\n') + (noteBlock ? '\n' + noteBlock : '');
+  const title = isDaily
+    ? `🎉 DAILY GIVEAWAY ĐÃ KẾT THÚC — ${cleanPrize.toUpperCase()}`
+    : `🎉 GIVEAWAY ĐÃ KẾT THÚC — ${cleanPrize.toUpperCase()}`;
+
   return new EmbedBuilder()
-    .setTitle(`🎉 GIVEAWAY ĐÃ KẾT THÚC 🎉`)
-    .setDescription(desc.join('\n'))
+    .setTitle(title)
+    .setDescription(desc)
     .setColor(0x2F3136)
-    .setFooter({ text: '4AM SHOP • Giveaway đã khép lại!' })
+    .setFooter({ text: '4AM SHOP • Giveaway đã kết thúc' })
     .setTimestamp(new Date());
 }
 
@@ -232,30 +272,31 @@ function toggleJoinGiveaway(messageId, userId, message = null) {
       const embed = message.embeds[0];
       let prize = 'Giveaway';
       if (embed.title) {
-        const titleMatch = embed.title.match(/GIVEAWAY:\s*(.*?)(?:\s*🎉|$)/i);
-        if (titleMatch) prize = titleMatch[1].trim();
+        const titleMatch = embed.title.match(/(?:GIVEAWAY(?:\s*—|\s*:)?\s*)(.*?)(?:\s*🎉|$)/i);
+        if (titleMatch) prize = cleanPrizeText(titleMatch[1]);
       }
 
       let hostId = message.guild?.ownerId || '895890393806274570';
       if (embed.description) {
-        const hostMatch = embed.description.match(/👑 \*\*Người tổ chức:\*\* <@(\d+)>/);
+        const hostMatch = embed.description.match(/👑 (?:\*\*Người tổ chức:\*\*|Tổ chức:)\s*<@(\d+)>/);
         if (hostMatch) hostId = hostMatch[1];
       }
 
       let description = '';
       if (embed.description) {
-        const descMatch = embed.description.match(/📝 \*\*Ghi chú\/Điều kiện:\*\* (.*)/);
+        const descMatch = embed.description.match(/(?:📝 \*\*Ghi chú\/Điều kiện:\*\*|📌 Yêu cầu bắt buộc:\s*•\s*)(.*)/);
         if (descMatch) description = descMatch[1].trim();
       }
 
       let winnersCount = 1;
       if (embed.description) {
-        const winMatch = embed.description.match(/🏆 \*\*Số người trúng:\*\* \*\*(\d+)\*\*/);
+        const winMatch = embed.description.match(/🏆 (?:\*\*Số người trúng:\*\* \*\*|Số lượng:\s*)(\d+)/);
         if (winMatch) winnersCount = parseInt(winMatch[1], 10) || 1;
       }
 
       const endsAt = embed.timestamp ? new Date(embed.timestamp).getTime() : (Date.now() + 86400000);
       const now = Date.now();
+      const isDaily = message.channelId === DAILY_GIVEAWAY_CHANNEL_ID || (embed.title && /DAILY/i.test(embed.title));
 
       g = {
         messageId,
@@ -270,7 +311,8 @@ function toggleJoinGiveaway(messageId, userId, message = null) {
         winnersCount,
         participants: [],
         winners: [],
-        ended: endsAt <= now
+        ended: endsAt <= now,
+        isDaily: !!isDaily
       };
 
       list.push(g);
@@ -335,17 +377,21 @@ async function endGiveaway(client, messageId, manual = false) {
         await msg.edit({ embeds: [endedEmbed], components: [endedRow] }).catch(() => {});
 
         // Gửi thông báo chúc mừng
+        // Gửi thông báo chúc mừng
         if (winners.length > 0) {
           const mentions = winners.map(id => `<@${id}>`).join(' ');
+          const cleanPrize = cleanPrizeText(g.prize);
           if (g.isDaily) {
             await channel.send({
-              content: `🎊 **CHÚC MỪNG CHIẾN THẮNG DAILY GIVEAWAY!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${g.prize}**!\n👉 **Lưu ý:** Staff sẽ kiểm tra bio (**owo giá rẻ tại: discord.gg/fouram**) trước khi trao giải.\nNếu hợp lệ, hãy mở Ticket Staff để nhận 1M Cow nhé! 🎁`,
-              reply: { messageReference: g.messageId }
+              content: `🎊 **CHÚC MỪNG CHIẾN THẮNG DAILY GIVEAWAY!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${cleanPrize}**!\n👉 **Lưu ý:** Staff sẽ kiểm tra bio (\`owo giá rẻ tại: discord.gg/fouram\`) trước khi trao giải.\nNếu hợp lệ, hãy mở Ticket Staff để nhận quà nhé! 🎁`,
+              reply: { messageReference: g.messageId },
+              flags: [4096] // MessageFlags.SuppressEmbeds: không bung widget invite to đùng
             }).catch(() => {});
           } else {
             await channel.send({
-              content: `🎊 **CHÚC MỪNG CHIẾN THẮNG!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${g.prize}** tổ chức bởi <@${g.hostId}>!\n👉 Hãy nhắn tin cho người tổ chức hoặc mở Ticket Staff để nhận thưởng nhé!`,
-              reply: { messageReference: g.messageId }
+              content: `🎊 **CHÚC MỪNG CHIẾN THẮNG!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${cleanPrize}** tổ chức bởi <@${g.hostId}>!\n👉 Hãy nhắn tin cho người tổ chức hoặc mở Ticket Staff để nhận thưởng nhé!`,
+              reply: { messageReference: g.messageId },
+              flags: [4096]
             }).catch(() => {});
           }
 
@@ -354,7 +400,7 @@ async function endGiveaway(client, messageId, manual = false) {
               try {
                 console.log('[Daily Giveaway] Đang tự động bắt đầu đợt mới cho ngày tiếp theo...');
                 await startDailyGiveaway(client, g.channelId, {
-                  prize: g.prize,
+                  prize: cleanPrize,
                   description: g.description,
                   winnersCount: g.winnersCount,
                   hostId: g.hostId
@@ -365,9 +411,11 @@ async function endGiveaway(client, messageId, manual = false) {
             }, 10000);
           }
         } else {
+          const cleanPrize = cleanPrizeText(g.prize);
           await channel.send({
-            content: `📢 Giveaway **${g.prize}** đã kết thúc nhưng không có người tham gia hợp lệ!`,
-            reply: { messageReference: g.messageId }
+            content: `📢 Giveaway **${cleanPrize}** đã kết thúc nhưng không có người tham gia hợp lệ!`,
+            reply: { messageReference: g.messageId },
+            flags: [4096]
           }).catch(() => {});
         }
       }
@@ -407,10 +455,12 @@ async function rerollGiveaway(client, messageId, rerollCount = 1) {
   try {
     const channel = await client.channels.fetch(g.channelId).catch(() => null);
     if (channel) {
+      const cleanPrize = cleanPrizeText(g.prize);
       const mentions = newWinners.map(id => `<@${id}>`).join(' ');
       await channel.send({
-        content: `🎉 **REROLL GIVEAWAY THÀNH CÔNG!** 🎉\nNgười chiến thắng mới cho giải **${g.prize}** là: ${mentions}!\n👉 Hãy liên hệ Staff để nhận quà nhé!`,
-        reply: { messageReference: g.messageId }
+        content: `🎉 **REROLL GIVEAWAY THÀNH CÔNG!** 🎉\nNgười chiến thắng mới cho giải **${cleanPrize}** là: ${mentions}!\n👉 Hãy liên hệ Staff để nhận quà nhé!`,
+        reply: { messageReference: g.messageId },
+        flags: [4096]
       }).catch(() => {});
 
       // Update lại embed gốc
@@ -428,6 +478,41 @@ async function rerollGiveaway(client, messageId, rerollCount = 1) {
   return { ok: true, newWinners };
 }
 
+/**
+ * Dọn dẹp các tin nhắn cũ trong kênh Daily Giveaway để giữ kênh luôn sạch sẽ, không bị biến thành bãi rác
+ */
+async function cleanOldDailyGiveaways(channel, preserveMessageId = null) {
+  let totalDeleted = 0;
+  try {
+    if (!channel || !channel.isTextBased()) return 0;
+    const fetched = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+    if (!fetched || fetched.size === 0) return 0;
+
+    const toDelete = fetched.filter(m => {
+      if (preserveMessageId && m.id === preserveMessageId) return false;
+      if (m.pinned) return false;
+      return true;
+    });
+
+    if (toDelete.size > 0) {
+      totalDeleted = toDelete.size;
+      if (toDelete.size === 1) {
+        await toDelete.first().delete().catch(() => {});
+      } else {
+        const deleted = await channel.bulkDelete(toDelete, true).catch(() => null);
+        if (!deleted || deleted.size < toDelete.size) {
+          const remaining = toDelete.filter(m => !deleted || !deleted.has(m.id));
+          for (const msg of remaining.values()) {
+            await msg.delete().catch(() => {});
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Giveaway Clean] Lỗi khi dọn dẹp kênh:', err);
+  }
+  return totalDeleted;
+}
 
 /**
  * Tự động tạo một đợt Daily Giveaway 1M Cow kéo dài 24 tiếng
@@ -442,12 +527,15 @@ async function startDailyGiveaway(client, channelId = DAILY_GIVEAWAY_CHANNEL_ID,
       return null;
     }
 
+    // Tự động dọn dẹp các tin nhắn cũ trong kênh trước khi tạo mới để kênh luôn sạch sẽ
+    await cleanOldDailyGiveaways(channel);
+
     const guild = channel.guild;
     const hostId = customConfig.hostId || guild.ownerId || '895890393806274570';
     const durationMs = customConfig.durationMs || 24 * 60 * 60 * 1000; // 24 giờ
     const endsAt = Date.now() + durationMs;
-    const prize = customConfig.prize || '1.000.000 Cow (1M Cow)';
-    const description = customConfig.description || 'Treo bio: "owo giá rẻ tại: discord.gg/fouram" (Lưu ý: Khi trúng giải Staff sẽ check bio, nếu không có sẽ Reroll người khác!)';
+    const prize = customConfig.prize ? cleanPrizeText(customConfig.prize) : '1.000.000 Cow';
+    const description = customConfig.description || '';
     const winnersCount = customConfig.winnersCount || 1;
 
     const dummy = {
@@ -532,6 +620,8 @@ module.exports = {
   loadGiveaways,
   saveGiveaways,
   parseDuration,
+  cleanPrizeText,
+  cleanOldDailyGiveaways,
   buildActiveGiveawayEmbed,
   buildGiveawayActionRow,
   buildEndedGiveawayEmbed,
