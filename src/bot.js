@@ -63,90 +63,11 @@ const {
 
 const { 
   translateText, 
-  isProbablyVietnamese, 
-  resolveLangCode, 
-  buildLanguageListEmbed 
+  isProbablyVietnamese 
 } = require('./translator');
-const ticketTargetLangMap = new Map();
-const ticketTranslateDisabledSet = new Set();
-const TICKET_LANG_FILE = path.resolve(__dirname, '..', 'data', 'ticketLanguages.json');
 
-function loadTicketLanguages() {
-  try {
-    if (fs.existsSync(TICKET_LANG_FILE)) {
-      const raw = fs.readFileSync(TICKET_LANG_FILE, 'utf8');
-      const data = JSON.parse(raw);
-      if (data && typeof data === 'object') {
-        if (data.active && typeof data.active === 'object') {
-          for (const [k, v] of Object.entries(data.active)) {
-            if (v) ticketTargetLangMap.set(k, v);
-          }
-        }
-        if (Array.isArray(data.disabled)) {
-          for (const k of data.disabled) {
-            if (k) ticketTranslateDisabledSet.add(k);
-          }
-        }
-        // Hỗ trợ định dạng phẳng cũ: { "channelId": "en" }
-        for (const [k, v] of Object.entries(data)) {
-          if (k !== 'active' && k !== 'disabled' && typeof v === 'string') {
-            ticketTargetLangMap.set(k, v);
-          }
-        }
-      }
-    }
-  } catch (err) {
-    console.error('[Translator] Error loading ticket languages:', err);
-  }
-}
-
-function saveTicketLanguages() {
-  try {
-    const dataDir = path.dirname(TICKET_LANG_FILE);
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-    const active = {};
-    for (const [k, v] of ticketTargetLangMap.entries()) {
-      active[k] = v;
-    }
-    const disabled = Array.from(ticketTranslateDisabledSet);
-    const payload = JSON.stringify({ active, disabled }, null, 2);
-    fs.writeFileSync(TICKET_LANG_FILE, payload, 'utf8');
-  } catch (err) {
-    console.error('[Translator] Error saving ticket languages:', err);
-  }
-}
-
-loadTicketLanguages();
-
-/**
- * Xác định ngôn ngữ dịch mục tiêu của ticket hoặc kênh riêng (mặc định 'en' cho ticket quốc tế)
- */
-function getTicketTargetLang(channel) {
-  if (!channel) return null;
-  // 1. Kiểm tra cache cấu hình từ map / file data (Ưu tiên tuyệt đối khi Staff đã gõ !lang / !tr on)
-  if (ticketTargetLangMap.has(channel.id)) {
-    return ticketTargetLangMap.get(channel.id);
-  }
-  // 2. Kênh có tiền tố / hậu tố -en- hoặc ticket-en
-  const name = (channel.name || '').toLowerCase();
-  if (name.includes('-en-') || name.startsWith('ticket-en') || name.endsWith('-en')) {
-    return 'en';
-  }
-  // 3. Category quốc tế: FORIEGN TICKET, FOREIGN TICKET, INTL, GLOBAL (Bao gồm tra cứu parentId nếu cache chưa nạp)
-  let parent = channel.parent;
-  if (!parent && channel.parentId && channel.guild) {
-    parent = channel.guild.channels.cache.get(channel.parentId) || null;
-  }
-  if (parent) {
-    const pName = (parent.name || '').toLowerCase();
-    if (pName.includes('foriegn') || pName.includes('foreign') || pName.includes('intl') || pName.includes('global')) {
-      return 'en';
-    }
-  }
-  return null;
-}
+// Tỷ giá quy đổi VNĐ sang USD cho Menu quốc tế ($1 USD = 24.000 VNĐ để bù phí giao dịch crypto, không bị rẻ hơn VNĐ)
+const DEFAULT_USD_RATE = parseInt(process.env.USD_EXCHANGE_RATE, 10) || 24000;
 
 const client = new Client({
   intents: [
@@ -622,7 +543,7 @@ function buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, selectedValue =
       const name = parts[0];
       const price = parts.slice(1).join(' | ');
       if (isEn) {
-        const tr = translatePackageItemToEnglish(name, price, 28000);
+        const tr = translatePackageItemToEnglish(name, price, DEFAULT_USD_RATE);
         label = tr.name;
         description = 'Price: ' + tr.price;
       } else {
@@ -664,7 +585,7 @@ function buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, selectedValue =
     const chosenRaw = rawItems[idx];
     if (chosenRaw) {
       const pName = String(chosenRaw).split('|')[0].trim().replace(/^•\s*/, '');
-      const displayName = isEn ? translatePackageItemToEnglish(pName, '', 28000).name : pName;
+      const displayName = isEn ? translatePackageItemToEnglish(pName, '', DEFAULT_USD_RATE).name : pName;
       placeholder = (isEn ? `Selected: ${displayName} (Click to change)` : `Đã chọn: ${pName} (Bấm để đổi)`).slice(0, 100);
     }
   }
@@ -1182,7 +1103,7 @@ const CATEGORY_EN_LABELS = {
   'office365': 'Microsoft 365 Plus'
 };
 
-function translatePackageItemToEnglish(name, priceStr, rate = 28000) {
+function translatePackageItemToEnglish(name, priceStr, rate = DEFAULT_USD_RATE) {
   let enName = String(name || '').trim()
     .replace(/(\d+)\s*tháng/gi, '$1 Month')
     .replace(/(\d+)\s*thang/gi, '$1 Month')
@@ -2546,129 +2467,20 @@ client.on('messageCreate', async (message) => {
       return message.reply('✅ Đã đồng bộ lại Bảng Giá Menu song ngữ (VNĐ & USD) thành công!').catch(() => {});
     }
 
-    // Lệnh xem bảng mã ngôn ngữ quốc tế (Check mã vùng / mã ngôn ngữ): !langs, !languages, !manguocgia, !mavung, !quocgia
-    if (lower === '!langs' || lower === '!languages' || lower === '!manguocgia' || lower === '!mavung' || lower === '!quocgia' || lower === '!lang list') {
-      return message.reply({ embeds: [buildLanguageListEmbed()] }).catch(() => {});
-    }
-
-    // ------------------------------------------
-    // TỰ ĐỘNG DỊCH HAI CHIỀU TRONG TICKET & KÊNH RIÊNG TƯ / ĐỐI TÁC
-    // ------------------------------------------
-    const isExplicitlyConfigured = ticketTargetLangMap.has(message.channel.id);
-    const isTicket = await isTicketChannel(message.channel);
-    const isPrivate = isPrivateChannel(message.channel);
-
-    if (isExplicitlyConfigured || isTicket || isPrivate) {
-      const isTranslateDisabled = ticketTranslateDisabledSet.has(message.channel.id);
-
-      // Xem bảng mã ngôn ngữ ngay trong ticket
-      if (lower === '!langs' || lower === '!languages' || lower === '!lang help' || lower === '!lanh' || lower === '!dich help') {
-        return message.reply({ embeds: [buildLanguageListEmbed()] }).catch(() => {});
-      }
-
-      // Lệnh kiểm tra trạng thái dịch của kênh: !tr check / !lang check / !dich status
-      if (lower === '!tr check' || lower === '!lang check' || lower === '!dich status' || lower === '!tr status') {
-        const targetLang = getTicketTargetLang(message.channel);
-        const isActive = !isTranslateDisabled && !!targetLang;
-        const statusText = isActive 
-          ? `🟢 **Đang BẬT** (Ngôn ngữ mục tiêu: \`${targetLang.toUpperCase()}\`)` 
-          : '🔴 **Đang TẮT**';
-        const typeText = isTicket ? 'Ticket' : (isPrivate ? 'Kênh riêng tư / Đối tác' : 'Kênh thông thường');
-        return message.reply(`🌐 **Trạng thái dịch thuật kênh #${message.channel.name}:**\n• Phân loại: \`${typeText}\`\n• Trạng thái: ${statusText}\n• Gõ \`!lang <mã>\` hoặc \`!tr on\` để bật, \`!tr off\` để tắt.`).catch(() => {});
-      }
-
-      // Lệnh đặt lại / dọn dẹp sạch toàn bộ cài đặt dịch của các kênh: !tr clear / !tr reset / !dich clear
-      if (lower === '!tr clear' || lower === '!tr reset' || lower === '!dich clear' || lower === '!dich reset') {
-        const isStaff = await isStaffMember(message);
-        if (!isStaff) return;
-        ticketTargetLangMap.clear();
-        ticketTranslateDisabledSet.add(message.channel.id);
-        saveTicketLanguages();
-        await message.reply('🧹 **Đã đặt lại hệ thống dịch thuật và ĐÃ TẮT DỊCH cho kênh này!**\n• Tất cả các kênh thường và kênh đối tác đã được làm sạch.\n• Muốn bật lại cho kênh này, chỉ cần gõ: `!tr on` hoặc `!lang en`.').catch(() => {});
-        return;
-      }
-
-      // Lệnh tắt bật dịch thủ công: hỗ trợ đầy đủ các biến thể !tr off, !dich off, !lang off, !tat, !tắt...
-      if (lower === '!tr on' || lower === '!translate on' || lower === '!dich on' || lower === '!lang on' || lower === '!lanh on' || lower === '!lag on' || lower === '!bat' || lower === '!batdich' || lower === '!bật') {
-        ticketTranslateDisabledSet.delete(message.channel.id);
-        if (!ticketTargetLangMap.has(message.channel.id)) ticketTargetLangMap.set(message.channel.id, 'en');
-        saveTicketLanguages();
-        await message.reply('🌐 **Tự động dịch hai chiều: ĐÃ BẬT cho kênh này.**\n• Khách/Đối tác nhắn ngoại ngữ ➔ Bot dịch sang tiếng Việt cho Staff.\n• Staff nhắn tiếng Việt ➔ Bot dịch sang tiếng Anh cho khách.\n• Muốn tắt bất kỳ lúc nào, chỉ cần gõ: `!tr off` hoặc `!tat`.').catch(() => {});
-        return;
-      }
-
-      if (lower === '!tr off' || lower === '!translate off' || lower === '!dich off' || lower === '!lang off' || lower === '!lanh off' || lower === '!lag off' || lower === '!tat' || lower === '!tatdich' || lower === '!tắt' || lower === '!tat dich' || lower === '!tắt dịch') {
-        ticketTranslateDisabledSet.add(message.channel.id);
-        ticketTargetLangMap.delete(message.channel.id);
-        saveTicketLanguages();
-        await message.reply('🔕 **Tự động dịch: ĐÃ TẮT cho kênh này.**\n• Muốn bật lại, chỉ cần gõ `!tr on` hoặc `!lang en`.').catch(() => {});
-        return;
-      }
-
-      // Lệnh đổi ngôn ngữ mục tiêu (Hỗ trợ cả lỗi gõ nhanh / teencode: !lang, !lanh, !lag, !dich, !tr)
-      if (lower.startsWith('!lang ') || lower.startsWith('!lanh ') || lower.startsWith('!lag ') || (lower.startsWith('!dich ') && !lower.startsWith('!dich on') && !lower.startsWith('!dich off')) || (lower.startsWith('!tr ') && !lower.startsWith('!tr on') && !lower.startsWith('!tr off'))) {
-        const rawInput = lower.replace(/^!(lang|lanh|lag|dich|tr)\s+/i, '').trim();
-        const langCode = resolveLangCode(rawInput);
-        if (langCode) {
-          ticketTranslateDisabledSet.delete(message.channel.id);
-          ticketTargetLangMap.set(message.channel.id, langCode);
-          saveTicketLanguages();
-          await message.reply(`🌐 **Ngôn ngữ mục tiêu của kênh đã đổi thành:** \`${langCode.toUpperCase()}\`.\n• Bot sẽ tự động dịch hai chiều giữa Tiếng Việt và ${langCode.toUpperCase()}.\n• Gõ \`!langs\` nếu muốn xem lại danh sách mã ngôn ngữ khác.`).catch(() => {});
-          return;
-        } else {
-          // Nếu không phải mã ngôn ngữ mà là câu văn (VD: !tr can you send payment info?) -> Dịch nhanh 1 câu đó mà KHÔNG bật dịch liên tục
-          const textToTranslate = trimmed.replace(/^!(lang|lanh|lag|dich|tr)\s+/i, '').trim();
-          if (textToTranslate && textToTranslate.length >= 2) {
-            const isTextVN = isProbablyVietnamese(textToTranslate);
-            const fromLang = isTextVN ? 'vi' : 'auto';
-            const toLang = isTextVN ? 'en' : 'vi';
-            const oneOff = await translateText(textToTranslate, fromLang, toLang);
-            if (oneOff) {
-              const flag = isTextVN ? '🌐 [EN]' : '🇻🇳 [Dịch]';
-              await message.reply({
-                content: `${flag}: *${oneOff}*`,
-                allowedMentions: { repliedUser: false }
-              }).catch(() => {});
-              return;
-            }
-          }
-        }
-      }
-
-      // TỰ ĐỘNG DỊCH HAI CHIỀU TRONG TICKET & KÊNH RIÊNG TƯ
-      // CHỈ DỊCH KHI KÊNH ĐÃ CÓ targetLang (Thuộc danh mục FORIEGN TICKET, tên có -en-, hoặc được Staff bật chủ động qua !lang / !tr on)
-      // TUYỆT ĐỐI KHÔNG TỰ ĐỘNG KÍCH HOẠT DỊCH Ở CÁC TICKET NỘI ĐỊA VIỆT NAM THÔNG THƯỜNG!
-      if (!isTranslateDisabled) {
-        const isCommand = trimmed.startsWith('!') || trimmed.startsWith('/') || trimmed.startsWith('4am') || trimmed.startsWith('tos') || trimmed.startsWith('stk');
-        const hasLetters = /[a-zA-ZÀ-ỹ]/.test(trimmed);
-        const isUrl = /^https?:\/\//i.test(trimmed);
-        const isIdPipeSyntax = /^\d{16,20}\s*\|/i.test(trimmed);
-
-        if (!isCommand && hasLetters && !isUrl && !isIdPipeSyntax && trimmed.length >= 2) {
-          const targetLang = getTicketTargetLang(message.channel);
-
-          if (targetLang) {
-            const isVN = isProbablyVietnamese(trimmed);
-            if (isVN) {
-              // Tin nhắn Tiếng Việt -> Dịch sang ngoại ngữ mục tiêu cho đối tác / khách
-              const translated = await translateText(trimmed, 'vi', targetLang);
-              if (translated && translated.toLowerCase() !== trimmed.toLowerCase()) {
-                await message.reply({
-                  content: `🌐 **[${targetLang.toUpperCase()}]:** *${translated}*`,
-                  allowedMentions: { repliedUser: false }
-                }).catch(() => {});
-              }
-            } else {
-              // Tin nhắn Ngoại ngữ -> Dịch sang Tiếng Việt cho Staff
-              const translated = await translateText(trimmed, 'auto', 'vi');
-              if (translated && translated.toLowerCase() !== trimmed.toLowerCase()) {
-                await message.reply({
-                  content: `🇻🇳 **[Dịch]:** *${translated}*`,
-                  allowedMentions: { repliedUser: false }
-                }).catch(() => {});
-              }
-            }
-          }
+    // Lệnh dịch thủ công 1 câu đơn lẻ: !dich <câu> hoặc !tr <câu> (Chỉ dịch khi Staff chủ động gọi lệnh, KHÔNG tự động dịch trong cuộc trò chuyện)
+    if (lower.startsWith('!dich ') || lower.startsWith('!tr ')) {
+      const textToTranslate = trimmed.replace(/^!(dich|tr)\s+/i, '').trim();
+      if (textToTranslate && textToTranslate.length >= 2) {
+        const isTextVN = isProbablyVietnamese(textToTranslate);
+        const fromLang = isTextVN ? 'vi' : 'auto';
+        const toLang = isTextVN ? 'en' : 'vi';
+        const translated = await translateText(textToTranslate, fromLang, toLang);
+        if (translated) {
+          const flag = isTextVN ? '🌐 [EN]' : '🇻🇳 [Dịch]';
+          return message.reply({
+            content: `${flag}: *${translated}*`,
+            allowedMentions: { repliedUser: false }
+          }).catch(() => {});
         }
       }
     }
@@ -2850,7 +2662,7 @@ function buildCategoryDetailPayload(selectedKey, lang = 'vi') {
   if (!cat) return null;
 
   const items = cat.items || [];
-  const USD_RATE = 28000;
+  const USD_RATE = DEFAULT_USD_RATE;
 
   const formatPackageItemBox = (rawList, isEnMode = false) => {
     if (!Array.isArray(rawList) || rawList.length === 0) return '';
@@ -2969,23 +2781,6 @@ client.on('interactionCreate', async (i) => {
     return;
   }
 
-  // --- Toggle Ticket Auto-Translate Button ---
-  if (i.isButton() && (i.customId === 'toggle_ticket_translate' || i.customId.startsWith('toggle_ticket_translate|'))) {
-    const chId = i.channel.id;
-    const isCurrentlyActive = ticketTargetLangMap.has(chId) && !ticketTranslateDisabledSet.has(chId);
-    if (!isCurrentlyActive) {
-      ticketTranslateDisabledSet.delete(chId);
-      ticketTargetLangMap.set(chId, 'en');
-      saveTicketLanguages();
-      await i.reply({ content: '🌐 **Đã BẬT tự động dịch hai chiều cho ticket này.** (Staff chat tiếng Việt -> Khách đọc tiếng Anh; Khách chat tiếng nước ngoài -> Staff đọc tiếng Việt)', ephemeral: false }).catch(() => {});
-    } else {
-      ticketTranslateDisabledSet.add(chId);
-      ticketTargetLangMap.delete(chId);
-      saveTicketLanguages();
-      await i.reply({ content: '🔕 **Đã TẮT tự động dịch cho ticket này.**', ephemeral: false }).catch(() => {});
-    }
-    return;
-  }
 
   // --- Deprecated Language Role Buttons (No longer required) ---
   if (i.isButton() && (i.customId === 'role_lang_vi' || i.customId === 'role_lang_en')) {
@@ -3159,7 +2954,7 @@ client.on('interactionCreate', async (i) => {
         `📦 **${isEn ? 'Selected Service' : 'Dịch vụ quan tâm'}:** **${cat.label}**`,
         '',
         isEn 
-          ? `💬 **Real-time Auto-Translate is ACTIVE in this ticket.** You can speak English, French, Spanish, Russian, or any language, and our bot will automatically translate for staff in real-time!\n\n👉 **Please select your package below or tell us what you need in chat:**`
+          ? '👉 **Please select your package below or tell us what you need in chat:**'
           : '👉 **Vui lòng chọn loại gói bạn muốn mua (hoặc chọn "Cần tư vấn") ở menu bên dưới:**'
       ].filter(Boolean).join('\n'))
       .setColor(cat.color || 0x00C2A8)
@@ -3180,17 +2975,6 @@ client.on('interactionCreate', async (i) => {
     const itemPrompt = buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, null, isEn);
     const ticketActionRow = buildTicketActionRow(orderDraftNo, categoryKey, true);
     const ticketComponents = [itemPrompt.row, ticketActionRow];
-    if (isEn) {
-      ticketTargetLangMap.set(ticketChannel.id, 'en');
-      saveTicketLanguages();
-      const intlRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`toggle_ticket_translate|${ticketChannel.id}`)
-          .setLabel('🌐 Auto-Translate: ON')
-          .setStyle(ButtonStyle.Secondary)
-      );
-      ticketComponents.push(intlRow);
-    }
 
     await ticketChannel.send({
       content: mentions.join(' '),
@@ -3275,11 +3059,6 @@ client.on('interactionCreate', async (i) => {
       });
     }
 
-    if (isEn) {
-      ticketTargetLangMap.set(ticketChannel.id, 'en');
-      saveTicketLanguages();
-    }
-
     if (!isStaff) markTicketOpened(i.user.id);
 
     // Auto-record support order in SQLite Database & attach ticket
@@ -3323,7 +3102,7 @@ client.on('interactionCreate', async (i) => {
     if (isEn) {
       welcomeTitle = `🎟️ GLOBAL ORDER & SUPPORT TICKET — ${storeName}`;
       welcomeMsg = `Hello <@${i.user.id}>! Welcome to **${storeName}**.`;
-      welcomeNote = `💬 **Real-time Auto-Translate is ACTIVE in this ticket.**\nYou can freely type in English, French, Spanish, Russian, Chinese, or any language you speak! Our bot will translate your messages into Vietnamese for staff in real-time, and automatically translate staff responses back to you.\n\n👉 *Please send your order request, questions, or product details below to get started!*`;
+      welcomeNote = '👉 *Please send your order request, questions, or product details below to get started!*';
     } else {
       welcomeTitle = (langConf.welcomeTitle || '🎟️ TICKET HỖ TRỢ — {storeName}').replace(/\{storeName\}/g, storeName);
       const rawWelcomeMsg = langConf.welcomeMsg || 'Xin chào <@{userId}>! Cảm ơn bạn đã liên hệ với **{storeName}**.';
@@ -3362,11 +3141,7 @@ client.on('interactionCreate', async (i) => {
       new ButtonBuilder()
         .setCustomId(`close_support_ticket|${orderDraftNo}`)
         .setLabel(isEn ? '🔒 Close Ticket' : '🔒 Đóng Ticket')
-        .setStyle(ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId(`toggle_ticket_translate|${ticketChannel.id}`)
-        .setLabel(isEn ? '🌐 Auto-Translate: ON' : '🌐 Bật dịch hai chiều')
-        .setStyle(isEn ? ButtonStyle.Success : ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Danger)
     );
 
     await ticketChannel.send({
@@ -3540,7 +3315,7 @@ client.on('interactionCreate', async (i) => {
     }
     const pingStr = pings.length ? pings.join(' ') : (staffRoleId ? `<@&${staffRoleId}>` : 'Nhân viên hỗ trợ');
 
-    const isChannelEn = (i.channel.name || '').includes('-en-') || ticketTargetLangMap.get(i.channel.id) === 'en';
+    const isChannelEn = (i.channel.name || '').includes('-en-');
     if (selectedVal === 'consult_seller') {
       const updatedPrompt = buildCategoryItemPrompt(cat, categoryKey, orderDraftNo, 'consult_seller', isChannelEn);
       const consultEmbed = new EmbedBuilder()
