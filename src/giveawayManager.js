@@ -137,7 +137,7 @@ function buildActiveGiveawayEmbed(giveaway) {
     reqBlock = [
       '',
       '📌 Yêu cầu bắt buộc:',
-      '• Treo bio: `owo giá rẻ tại: discord.gg/fouram`',
+      '• Treo bio: `owo giá rẻ tại: https://discord.gg/fouram`',
       '• Chưa treo bio khi chốt giải sẽ bị reroll.'
     ].join('\n');
   } else if (giveaway.description) {
@@ -383,7 +383,7 @@ async function endGiveaway(client, messageId, manual = false) {
           const cleanPrize = cleanPrizeText(g.prize);
           if (g.isDaily) {
             const winMsg = await channel.send({
-              content: `🎊 **CHÚC MỪNG CHIẾN THẮNG DAILY GIVEAWAY!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${cleanPrize}**!\n👉 **Lưu ý:** Staff sẽ kiểm tra bio (\`owo giá rẻ tại: discord.gg/fouram\`) trước khi trao giải.\nNếu hợp lệ, hãy mở Ticket Staff để nhận quà nhé! 🎁`,
+              content: `🎊 **CHÚC MỪNG CHIẾN THẮNG DAILY GIVEAWAY!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${cleanPrize}**!\n👉 **Lưu ý:** Staff sẽ kiểm tra bio (\`owo giá rẻ tại: https://discord.gg/fouram\`) trước khi trao giải.\nNếu hợp lệ, hãy mở Ticket Staff để nhận quà nhé! 🎁`,
               flags: [4096] // MessageFlags.SuppressEmbeds: không bung widget invite to đùng
             }).catch(() => null);
 
@@ -560,7 +560,7 @@ async function startDailyGiveaway(client, channelId = DAILY_GIVEAWAY_CHANNEL_ID,
       const mentions = lastEndedDaily.winners.map(id => `<@${id}>`).join(' ');
       const cleanPrize = cleanPrizeText(lastEndedDaily.prize);
       const reWinMsg = await channel.send({
-        content: `🎊 **CHÚC MỪNG CHIẾN THẮNG DAILY GIVEAWAY HÔM TRƯỚC!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${cleanPrize}**!\n👉 **Lưu ý:** Staff sẽ kiểm tra bio (\`owo giá rẻ tại: discord.gg/fouram\`) trước khi trao giải.\nNếu hợp lệ, hãy mở Ticket Staff để nhận quà nhé! 🎁`,
+        content: `🎊 **CHÚC MỪNG CHIẾN THẮNG DAILY GIVEAWAY HÔM TRƯỚC!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${cleanPrize}**!\n👉 **Lưu ý:** Staff sẽ kiểm tra bio (\`owo giá rẻ tại: https://discord.gg/fouram\`) trước khi trao giải.\nNếu hợp lệ, hãy mở Ticket Staff để nhận quà nhé! 🎁`,
         flags: [4096] // SuppressEmbeds
       }).catch(() => null);
 

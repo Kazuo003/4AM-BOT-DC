@@ -2503,7 +2503,7 @@ client.on('messageCreate', async (message) => {
         const mentions = lastEnded.winners.map(id => `<@${id}>`).join(' ');
         const cleanPrize = cleanPrizeText(lastEnded.prize);
         const reWinMsg = await message.channel.send({
-          content: `🎊 **CHÚC MỪNG CHIẾN THẮNG DAILY GIVEAWAY HÔM TRƯỚC!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${cleanPrize}**!\n👉 **Lưu ý:** Staff sẽ kiểm tra bio (\`owo giá rẻ tại: discord.gg/fouram\`) trước khi trao giải.\nNếu hợp lệ, hãy mở Ticket Staff để nhận quà nhé! 🎁`,
+          content: `🎊 **CHÚC MỪNG CHIẾN THẮNG DAILY GIVEAWAY HÔM TRƯỚC!** 🎊\nChúc mừng ${mentions} đã may mắn trúng giải **${cleanPrize}**!\n👉 **Lưu ý:** Staff sẽ kiểm tra bio (\`owo giá rẻ tại: https://discord.gg/fouram\`) trước khi trao giải.\nNếu hợp lệ, hãy mở Ticket Staff để nhận quà nhé! 🎁`,
           flags: [4096]
         }).catch(() => null);
 
