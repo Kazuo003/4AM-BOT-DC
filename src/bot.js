@@ -2373,30 +2373,25 @@ function getOwoGuidePayload(tab = 'menu', lang = 'vi') {
   const langTag = isEn ? '|en' : '|vi';
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`owo_guide_c1${langTag}`)
+      .setCustomId(tab === 'c1' ? `owo_guide_menu${langTag}` : `owo_guide_c1${langTag}`)
       .setLabel('1')
-      .setStyle(ButtonStyle.Primary)
-      .setDisabled(tab === 'c1'),
+      .setStyle(tab === 'c1' ? ButtonStyle.Success : ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId(`owo_guide_c2${langTag}`)
+      .setCustomId(tab === 'c2' ? `owo_guide_menu${langTag}` : `owo_guide_c2${langTag}`)
       .setLabel('2')
-      .setStyle(ButtonStyle.Primary)
-      .setDisabled(tab === 'c2'),
+      .setStyle(tab === 'c2' ? ButtonStyle.Success : ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId(`owo_guide_c3${langTag}`)
+      .setCustomId(tab === 'c3' ? `owo_guide_menu${langTag}` : `owo_guide_c3${langTag}`)
       .setLabel('3')
-      .setStyle(ButtonStyle.Primary)
-      .setDisabled(tab === 'c3'),
+      .setStyle(tab === 'c3' ? ButtonStyle.Success : ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId(`owo_guide_note${langTag}`)
+      .setCustomId(tab === 'note' ? `owo_guide_menu${langTag}` : `owo_guide_note${langTag}`)
       .setLabel(isEn ? 'Notes' : 'Lưu ý')
-      .setStyle(ButtonStyle.Danger)
-      .setDisabled(tab === 'note'),
+      .setStyle(tab === 'note' ? ButtonStyle.Success : ButtonStyle.Danger),
     new ButtonBuilder()
-      .setCustomId(`owo_guide_menu${langTag}`)
-      .setLabel('Home')
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(tab === 'menu')
+      .setCustomId(`owo_guide_${tab}|${isEn ? 'vi' : 'en'}`)
+      .setLabel(isEn ? '🇻🇳 Tiếng Việt' : '🌐 English')
+      .setStyle(ButtonStyle.Secondary)
   );
 
   return {
