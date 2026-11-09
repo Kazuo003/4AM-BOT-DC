@@ -4706,33 +4706,8 @@ client.on('interactionCreate', async (i) => {
   if (i.isButton() && (i.customId.startsWith('rate_order|') || i.customId.startsWith('rate_order_keep|'))) {
     const isKeepOpen = i.customId.startsWith('rate_order_keep|');
     const parts = i.customId.split('|');
-    const orderNo = parts[1];
+    const orderNo = parts[1] || '';
     const safeServiceParam = parts[2] || '';
-
-    // Nếu là lệnh feedback giữ ticket, chặn staff tự đánh giá
-    if (isKeepOpen) {
-      const isStaff = await isStaffMember({ guild: i.guild, user: i.user });
-      if (isStaff) {
-        return i.reply({
-          content: '⚠️ Nút này dành riêng cho Khách hàng gửi đánh giá nhé Staff ơi!',
-          ephemeral: true
-        });
-      }
-    }
-    let order = null;
-    if (orderNo) {
-      order = await prisma.order.findUnique({
-        where: { orderNo },
-        include: { user: true, product: true, ticket: true }
-      });
-    }
-    if (!order && i.channel?.id) {
-      const ticket = await prisma.ticket.findUnique({
-        where: { channelId: i.channel.id },
-        include: { order: { include: { user: true, product: true } } }
-      });
-      order = ticket?.order;
-    }
 
     // Tạm dừng timer đếm ngược tự động xóa kênh (nếu có) để khách hàng kịp điền feedback vào modal
     if (i.channel?.id && autoCloseTimers.has(i.channel.id)) {
@@ -4740,35 +4715,15 @@ client.on('interactionCreate', async (i) => {
       autoCloseTimers.delete(i.channel.id);
     }
 
-    // Kiểm tra quyền: Chỉ khách hàng sở hữu đơn mới có quyền gửi đánh giá
-    const customerDiscordId = order?.user?.discordId;
-    if (customerDiscordId && customerDiscordId !== i.user.id) {
-      return i.reply({
-        content: `❌ Chỉ khách hàng sở hữu đơn hàng này (<@${customerDiscordId}>) mới có quyền gửi đánh giá dịch vụ.`,
-        ephemeral: true
-      });
-    }
-
-    // Kiểm tra xem đơn đã được đánh giá trước đó chưa
-    if (order) {
-      let snap = {};
-      try { snap = JSON.parse(order.planSnapshotJson || '{}'); } catch (_) {}
-      const existingFeedback = await prisma.auditLog.findFirst({
-        where: {
-          orderId: order.id,
-          action: 'CUSTOMER_FEEDBACK'
-        }
-      });
-      if (snap.review || existingFeedback) {
-        return i.reply({
-          content: `ℹ️ Bạn đã gửi đánh giá cho đơn hàng **#${order.orderNo}** rồi (${snap.review?.stars || 5}⭐). Cảm ơn sự ủng hộ của bạn! 💖`,
-          ephemeral: true
-        });
-      }
-    }
+    // Hiển thị Modal ngay lập tức (0ms, không chờ database để không bao giờ bị Discord 3-second interaction timeout)
+    // Toàn bộ logic kiểm tra quyền sở hữu đơn & đã đánh giá hay chưa được chuyển sang Modal Submit (có deferReply an toàn)
+    const modalPrefix = isKeepOpen ? 'modal_rate_order_keep' : 'modal_rate_order';
+    const modalCustomId = safeServiceParam
+      ? `${modalPrefix}|${orderNo}|${safeServiceParam}`
+      : `${modalPrefix}|${orderNo}`;
 
     const modal = new ModalBuilder()
-      .setCustomId(`modal_rate_order|${order?.orderNo || orderNo}`)
+      .setCustomId(modalCustomId)
       .setTitle('⭐ Đánh Giá & Góp Ý Dịch Vụ');
 
     const starsInput = new TextInputBuilder()
@@ -4811,19 +4766,54 @@ client.on('interactionCreate', async (i) => {
     await i.deferReply({ ephemeral: true });
 
     try {
+      // 1. Nếu là lệnh feedback giữ ticket, chặn staff tự đánh giá
+      if (isKeepOpen) {
+        const isStaff = await isStaffMember({ guild: i.guild, user: i.user });
+        if (isStaff) {
+          return i.editReply({
+            content: '⚠️ Nút đánh giá này dành riêng cho Khách hàng gửi nhận xét nhé Staff ơi!'
+          });
+        }
+      }
+
       let order = null;
       if (orderNo) {
         order = await prisma.order.findUnique({
           where: { orderNo },
-          include: { user: true, product: true }
+          include: { user: true, product: true, ticket: true }
         });
       }
       if (!order && i.channel?.id) {
         const ticket = await prisma.ticket.findUnique({
           where: { channelId: i.channel.id },
-          include: { order: { include: { user: true, product: true } } }
+          include: { order: { include: { user: true, product: true, ticket: true } } }
         });
         order = ticket?.order;
+      }
+
+      // 2. Kiểm tra quyền: Chỉ khách hàng sở hữu đơn mới có quyền gửi đánh giá
+      const customerDiscordId = order?.user?.discordId;
+      if (customerDiscordId && customerDiscordId !== i.user.id) {
+        return i.editReply({
+          content: `❌ Chỉ khách hàng sở hữu đơn hàng này (<@${customerDiscordId}>) mới có quyền gửi đánh giá dịch vụ.`
+        });
+      }
+
+      // 3. Kiểm tra xem đơn đã được đánh giá trước đó chưa
+      if (order) {
+        let snap = {};
+        try { snap = JSON.parse(order.planSnapshotJson || '{}'); } catch (_) {}
+        const existingFeedback = await prisma.auditLog.findFirst({
+          where: {
+            orderId: order.id,
+            action: 'CUSTOMER_FEEDBACK'
+          }
+        });
+        if (snap.review || existingFeedback) {
+          return i.editReply({
+            content: `ℹ️ Bạn đã gửi đánh giá cho đơn hàng **#${order.orderNo}** rồi (${snap.review?.stars || 5}⭐). Cảm ơn sự ủng hộ của bạn! 💖`
+          });
+        }
       }
 
       const rawStars = i.fields.getTextInputValue('rating_stars')?.trim() || '5';
@@ -5018,7 +5008,7 @@ client.on('interactionCreate', async (i) => {
           const updatedRows = i.message.components.map(row => {
             const newRow = ActionRowBuilder.from(row);
             newRow.components.forEach(comp => {
-              if (comp.data?.custom_id?.startsWith('rate_order|')) {
+              if (comp.data?.custom_id?.startsWith('rate_order|') || comp.data?.custom_id?.startsWith('rate_order_keep|')) {
                 comp.setDisabled(true);
                 comp.setLabel(`✅ Đã đánh giá (${stars}⭐)`);
                 comp.setStyle(ButtonStyle.Secondary);
