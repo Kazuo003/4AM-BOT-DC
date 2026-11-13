@@ -400,19 +400,18 @@ async function endGiveaway(client, messageId, manual = false) {
           }
 
           if (g.isDaily) {
-            setTimeout(async () => {
-              try {
-                console.log('[Daily Giveaway] Đang tự động bắt đầu đợt mới cho ngày tiếp theo...');
-                await startDailyGiveaway(client, g.channelId, {
-                  prize: cleanPrize,
-                  description: g.description,
-                  winnersCount: g.winnersCount,
-                  hostId: g.hostId
-                });
-              } catch (dErr) {
-                console.error('[Daily Giveaway] Lỗi tự động tạo đợt mới:', dErr);
-              }
-            }, 10000);
+            try {
+              console.log('[Daily Giveaway] Đang đợi 5 giây trước khi bắt đầu đợt mới cho ngày tiếp theo...');
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              await startDailyGiveaway(client, g.channelId, {
+                prize: cleanPrize,
+                description: g.description,
+                winnersCount: g.winnersCount,
+                hostId: g.hostId
+              });
+            } catch (dErr) {
+              console.error('[Daily Giveaway] Lỗi tự động tạo đợt mới:', dErr);
+            }
           }
         } else {
           const cleanPrize = cleanPrizeText(g.prize);
@@ -529,6 +528,13 @@ async function startDailyGiveaway(client, channelId = DAILY_GIVEAWAY_CHANNEL_ID,
   if (isStartingDaily) return null;
   isStartingDaily = true;
   try {
+    const preCheckList = loadGiveaways();
+    const nowPre = Date.now();
+    if (!customConfig.force && preCheckList.some(x => !x.ended && x.channelId === channelId && x.endsAt > nowPre)) {
+      console.log('[Daily Giveaway] Đã có đợt Daily Giveaway đang chạy -> Bỏ qua tạo trùng.');
+      return null;
+    }
+
     const channel = await client.channels.fetch(channelId).catch(() => null);
     if (!channel) {
       console.warn('[Daily Giveaway] Không tìm thấy kênh:', channelId);
@@ -602,10 +608,6 @@ async function startDailyGiveaway(client, channelId = DAILY_GIVEAWAY_CHANNEL_ID,
       allowedMentions: { roles: [GIVEAWAYS_ROLE_ID] }
     });
 
-    dummy.messageId = msg.id;
-    row = buildGiveawayActionRow(dummy, false);
-    await msg.edit({ components: [row] }).catch(() => {});
-
     const registered = registerGiveaway({
       messageId: msg.id,
       channelId,
@@ -643,8 +645,9 @@ function initGiveawayScheduler(client) {
       }
 
       // Tự động kiểm tra: Nếu kênh Daily Giveaway chưa có đợt nào đang chạy thì khởi động
-      if (client.isReady()) {
-        const hasActiveDaily = list.some(x => !x.ended && x.channelId === DAILY_GIVEAWAY_CHANNEL_ID && x.endsAt > now);
+      if (client.isReady() && !isStartingDaily) {
+        const latestList = loadGiveaways();
+        const hasActiveDaily = latestList.some(x => !x.ended && x.channelId === DAILY_GIVEAWAY_CHANNEL_ID && x.endsAt > Date.now());
         if (!hasActiveDaily) {
           console.log('[Daily Giveaway Scheduler] Chưa có đợt Daily Giveaway nào đang chạy -> Tự động khởi tạo...');
           await startDailyGiveaway(client, DAILY_GIVEAWAY_CHANNEL_ID);

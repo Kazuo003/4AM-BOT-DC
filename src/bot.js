@@ -6223,7 +6223,8 @@ if (i.isButton() && i.customId.startsWith('check_pay_')) {
 
 // Giveaway Button Click: Tham gia / Rời khỏi
 if (i.isButton() && i.customId.startsWith('giveaway_join|')) {
-  const messageId = i.customId.split('|')[1];
+  const rawId = i.customId.split('|')[1];
+  const messageId = (rawId && rawId !== 'temp') ? rawId : i.message.id;
   const res = toggleJoinGiveaway(messageId, i.user.id, i.message);
 
   if (!res.ok) {
